@@ -1,30 +1,29 @@
-class Block:
-    """
-    Base class for any placeable object on the game grid.
+class Position:
+    """Component handling spatial data on the grid."""
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
 
-    Attributes
-    ----------
-    x_pos : int
-        The x-coordinate of the block.
-    y_pos : int
-        The y-coordinate of the block.
-    """
-    def __init__(self, x_pos, y_pos):
-        self.x_pos = x_pos
-        self.y_pos = y_pos
+class InventoryComponent:
+    """Component handling storage logic, extracted from Container."""
+    def __init__(self, max_slots, stack_limit):
+        self.slots = [InventorySlot(stack_limit) for _ in range(max_slots)]
 
-    def process_tick(self):
-        """
-        Defines the behavior of the block during a game tick.
+    def add_item(self, item_name):
+        for slot in self.slots:
+            if slot.item_name == item_name and slot.current_amount < slot.max_capacity:
+                slot.current_amount += 1
+                return True
         
-        Raises
-        ------
-        NotImplementedError
-            If the child class does not implement this method.
-        """
-        raise NotImplementedError
+        for slot in self.slots:
+            if slot.item_name is None:
+                slot.item_name = item_name
+                slot.current_amount = 1
+                return True
+                
+        return False
 
-class Machine(Block):
+class Machine:
     """
     Base class for functional machines capable of processing items.
 
@@ -36,9 +35,12 @@ class Machine(Block):
         The base speed at which the machine processes items.
     """
     def __init__(self, x_pos, y_pos, base_speed):
-        super().__init__(x_pos, y_pos)
+        self.position = Position(x_pos, y_pos)
         self.level = 1
         self.processing_speed = base_speed
+
+    def process_tick(self):
+        raise NotImplementedError
 
     def upgrade(self, player_inventory):
         """
@@ -56,7 +58,7 @@ class Machine(Block):
         """
         raise NotImplementedError
 
-class Conveyor(Block):
+class Conveyor:
     """
     Transports items between different blocks on the map.
 
@@ -68,7 +70,7 @@ class Conveyor(Block):
         The item currently being transported.
     """
     def __init__(self, x_pos, y_pos, direction):
-        super().__init__(x_pos, y_pos)
+        self.position = Position(x_pos, y_pos)
         self.direction = direction
         self.carrying_item = None
 
@@ -77,26 +79,6 @@ class Conveyor(Block):
         Moves the carried item to the next grid cell based on direction.
         """
         pass
-
-class FunctionalBlock(Block):
-    """
-    Base class for destination blocks like containers or sellers.
-    """
-    def accept_item(self, item_name):
-        """
-        Determines if the block can receive the incoming item.
-
-        Parameters
-        ----------
-        item_name : str
-            The name of the incoming item.
-
-        Raises
-        ------
-        NotImplementedError
-            If the child class does not implement this method.
-        """
-        raise NotImplementedError
 
 class InventorySlot:
     """
@@ -116,45 +98,24 @@ class InventorySlot:
         self.current_amount = 0
         self.max_capacity = max_capacity
 
-class Container(FunctionalBlock):
+class Container:
     """
     Storage unit that holds items using a slot-based system.
 
     Attributes
     ----------
-    slots : list of InventorySlot
-        The list of slots available in this container.
+    inventory : InventoryComponent
+        The component handling inventory slots and storage logic.
     """
     def __init__(self, x_pos, y_pos, max_slots, stack_limit):
-        super().__init__(x_pos, y_pos)
-        self.slots = [InventorySlot(stack_limit) for _ in range(max_slots)]
+        self.position = Position(x_pos, y_pos)
+        self.inventory = InventoryComponent(max_slots, stack_limit)
 
     def accept_item(self, item_name):
         """
-        Attempts to store an incoming item into an available slot.
-
-        Parameters
-        ----------
-        item_name : str
-            The name of the item to store.
-
-        Returns
-        -------
-        bool
-            True if the item was successfully stored, False if the container is full.
+        Delegates storing items to the inventory component.
         """
-        for slot in self.slots:
-            if slot.item_name == item_name and slot.current_amount < slot.max_capacity:
-                slot.current_amount += 1
-                return True
-        
-        for slot in self.slots:
-            if slot.item_name is None:
-                slot.item_name = item_name
-                slot.current_amount = 1
-                return True
-                
-        return False
+        return self.inventory.add_item(item_name)
 
     def process_tick(self):
         """
@@ -162,7 +123,7 @@ class Container(FunctionalBlock):
         """
         pass
 
-class Seller(FunctionalBlock):
+class Seller:
     """
     Consumes items and adds corresponding funds to the player economy.
 
@@ -176,7 +137,7 @@ class Seller(FunctionalBlock):
         Temporarily stores incoming items before they are sold.
     """
     def __init__(self, x_pos, y_pos, economy_manager, price_catalog):
-        super().__init__(x_pos, y_pos)
+        self.position = Position(x_pos, y_pos)
         self.economy = economy_manager
         self.prices = price_catalog
         self.input_buffer = []
