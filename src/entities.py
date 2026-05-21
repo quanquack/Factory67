@@ -1,27 +1,132 @@
+from recipes import recipe_registry
+
 class Position:
     """Component handling spatial data on the grid."""
     def __init__(self, x, y):
         self.x = x
         self.y = y
 
-class InventoryComponent:
-    """Component handling storage logic, extracted from Container."""
-    def __init__(self, max_slots, stack_limit):
-        self.slots = [InventorySlot(stack_limit) for _ in range(max_slots)]
 
-    def add_item(self, item_name):
-        for slot in self.slots:
-            if slot.item_name == item_name and slot.current_amount < slot.max_capacity:
-                slot.current_amount += 1
-                return True
-        
-        for slot in self.slots:
-            if slot.item_name is None:
-                slot.item_name = item_name
-                slot.current_amount = 1
-                return True
-                
+class InventorySlot:
+    """
+    Represents a single storage slot within a container.
+
+    Attributes
+    ----------
+    current_amount : int
+        The current number of items in this slot.
+    max_capacity : int
+        The maximum number of items this slot can hold.
+    """
+    def __init__(self, max_capacity):
+        self.current_amount = 0
+        self.max_capacity = max_capacity
+
+
+class InventoryComponent:
+    """
+    Component handling storage logic.
+
+    Attributes
+    ----------
+    slots : dict
+        A dictionary mapping item names to their respective InventorySlot.
+    stack_limit : dict[str, int]
+        The default maximum capacity for each type of item.
+    """
+    def __init__(self, stack_limit: dict[str, int] = None):
+        self.slots = {}
+        self.is_static = False
+        if stack_limit is not None:
+            self.is_static = True
+            for item in stack_limit:
+                self.slots[item] = InventorySlot(stack_limit[item])
+
+    def add_item(self, item_name) -> bool:
+        if item_name in self.slots:
+            if self.slots[item_name].current_amount >= self.slots[item_name].max_capacity:
+                return False
+            self.slots[item_name].current_amount += 1
+            return True
+        if not self.is_static:
+            self.slots[item_name] = InventorySlot(100)
+            self.slots[item_name].current_amount = 1
+            return True
         return False
+    
+    def remove_items(self, item_list: dict[str, int]) -> bool:
+        for entry in item_list:
+            if entry not in self.slots:
+                return False
+            if self.slots[entry].current_amount < item_list[entry]:
+                return False
+        
+        for entry in item_list:
+            self.slots[entry].current_amount -= item_list[entry]
+            if self.slots[entry].current_amount == 0 and not self.is_static:
+                self.slots.pop(entry)
+            
+        return True
+
+class RecipeManager:
+    def __init__(self, machine_type: str, require_selection: bool):
+        self.recipes = recipe_registry.get_recipes_for(machine_type)
+        self.cached_recipe = None
+        self.selected_recipe = None
+        self.require_selection = require_selection
+
+        self.lookup_map = {}
+        if not self.require_selection:
+            for output_item, ingredients in self.recipes.items():
+                input_name = next(iter(ingredients.keys()))
+                self.lookup_map[input_name] = output_item
+
+    def set_recipe(self, recipe_name):
+        if recipe_name in self.recipes:
+            self.selected_recipe = recipe_name
+            self.cached_recipe = None
+            return True
+        return False
+
+    def has_ingredients(self, required_items, inventory):
+        for item_name, amount in required_items.items():
+            if item_name not in inventory.slots:
+                return False
+            if inventory.slots.get(item_name).current_amount < amount:
+                return False
+        return True
+
+    def find_valid_recipe(self, inventory: InventoryComponent):
+        if self.selected_recipe is not None:
+            required_ingredients = self.recipes[self.selected_recipe]
+            if self.has_ingredients(required_ingredients, inventory):
+                return self.selected_recipe
+            return None
+        
+        if self.require_selection:
+            return None
+
+        if self.cached_recipe is not None:
+            required_ingredients = self.recipes[self.cached_recipe]
+            if self.has_ingredients(required_ingredients, inventory):
+                return self.cached_recipe
+            else:
+                self.cached_recipe = None
+
+        if not inventory.slots:
+            return None
+        
+        for item_name in inventory.slots:
+            if item_name in self.lookup_map:
+                output = self.lookup_map[item_name]
+                required_items = self.recipes[output]
+
+                if self.has_ingredients(required_items, inventory):
+                    self.cached_recipe = output
+                    return output
+
+        return None
+
 
 class Machine:
     """
@@ -80,49 +185,6 @@ class Conveyor:
         """
         pass
 
-class InventorySlot:
-    """
-    Represents a single storage slot within a container.
-
-    Attributes
-    ----------
-    item_name : str or None
-        The name of the item stored in this slot.
-    current_amount : int
-        The current number of items in this slot.
-    max_capacity : int
-        The maximum number of items this slot can hold.
-    """
-    def __init__(self, max_capacity):
-        self.item_name = None
-        self.current_amount = 0
-        self.max_capacity = max_capacity
-
-class Container:
-    """
-    Storage unit that holds items using a slot-based system.
-
-    Attributes
-    ----------
-    inventory : InventoryComponent
-        The component handling inventory slots and storage logic.
-    """
-    def __init__(self, x_pos, y_pos, max_slots, stack_limit):
-        self.position = Position(x_pos, y_pos)
-        self.inventory = InventoryComponent(max_slots, stack_limit)
-
-    def accept_item(self, item_name):
-        """
-        Delegates storing items to the inventory component.
-        """
-        return self.inventory.add_item(item_name)
-
-    def process_tick(self):
-        """
-        Containers are passive and do not perform active tick actions.
-        """
-        pass
-
 class Seller:
     """
     Consumes items and adds corresponding funds to the player economy.
@@ -168,7 +230,6 @@ class Seller:
 
         total = 0
         for item in self.input_buffer:
-            # Tra cứu giá, nếu không có mặc định là 0
             price = self.prices.get(item, 0) 
             total += price
 
