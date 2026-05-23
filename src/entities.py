@@ -1,27 +1,381 @@
+from collections import deque
+from registry import machine_registry, item_registry
+
 class Position:
-    """Component handling spatial data on the grid."""
+    """
+    Component handling spatial data on the grid.
+
+    Attributes
+    ----------
+    x : int or float
+        The x-coordinate of the position.
+    y : int or float
+        The y-coordinate of the position.
+    """
     def __init__(self, x, y):
+        """
+        Initializes the Position component.
+
+        Parameters
+        ----------
+        x : int or float
+            The x-coordinate.
+        y : int or float
+            The y-coordinate.
+        """
         self.x = x
         self.y = y
 
-class InventoryComponent:
-    """Component handling storage logic, extracted from Container."""
-    def __init__(self, max_slots, stack_limit):
-        self.slots = [InventorySlot(stack_limit) for _ in range(max_slots)]
 
-    def add_item(self, item_name):
-        for slot in self.slots:
-            if slot.item_name == item_name and slot.current_amount < slot.max_capacity:
-                slot.current_amount += 1
-                return True
-        
-        for slot in self.slots:
-            if slot.item_name is None:
-                slot.item_name = item_name
-                slot.current_amount = 1
-                return True
-                
+class InventorySlot:
+    """
+    Represent a single storage slot within a container.
+
+    Attributes
+    ----------
+    current_amount : int
+        The current number of items in this slot.
+    max_capacity : int
+        The maximum number of items this slot can hold.
+    """
+    def __init__(self, max_capacity):
+        """
+        Initializes the InventorySlot.
+
+        Parameters
+        ----------
+        max_capacity : int
+            The maximum capacity for this specific slot.
+        """
+        self.current_amount = 0
+        self.max_capacity = max_capacity
+
+
+class InventoryComponent:
+    """
+    Component handling storage logic.
+
+    Attributes
+    ----------
+    slots : dict
+        A dictionary mapping item names to their respective InventorySlot.
+    is_static : bool
+        Determines whether the inventory slots are fixed or can be dynamically added.
+    """
+    def __init__(self):
+        """Initializes an empty inventory component."""
+        self.slots = {}
+        self.is_static = False
+
+    def add_item(self, item_name) -> bool:
+        """
+        Attempts to add an item to the inventory.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the item to add.
+
+        Returns
+        -------
+        bool
+            True if the item was successfully added, False if the inventory is full
+            or cannot accept the item.
+        """
+        if item_name in self.slots:
+            if self.slots[item_name].current_amount >= self.slots[item_name].max_capacity:
+                return False
+            self.slots[item_name].current_amount += 1
+            return True
+        if not self.is_static:
+            self.slots[item_name] = InventorySlot(128)
+            self.slots[item_name].current_amount = 1
+            return True
         return False
+    
+    def remove_items(self, item_list: dict[str, int]) -> bool:
+        """
+        Attempts to remove a specific list of items from the inventory.
+
+        Parameters
+        ----------
+        item_list : dict[str, int]
+            A dictionary of item names and the quantities to remove.
+
+        Returns
+        -------
+        bool
+            True if all items were successfully removed, False if there were 
+            insufficient items in the inventory.
+        """
+        for entry in item_list:
+            if entry not in self.slots:
+                return False
+            if self.slots[entry].current_amount < item_list[entry]:
+                return False
+        
+        for entry in item_list:
+            self.slots[entry].current_amount -= item_list[entry]
+            if self.slots[entry].current_amount == 0 and not self.is_static:
+                self.slots.pop(entry)
+            
+        return True
+    
+    def configure_stack_limit(self, stack_limit: dict[str, int] = None):
+        """
+        Configures static inventory slots with specific stack limits.
+
+        Parameters
+        ----------
+        stack_limit : dict[str, int], optional
+            A dictionary mapping item names to their maximum capacity.
+        """
+        self.slots.clear()
+        self.is_static = True
+        if stack_limit:
+            for item in stack_limit:
+                self.slots[item] = InventorySlot(stack_limit[item])
+
+class RecipeManager:
+    """
+    Manages crafting recipes for machines.
+
+    Attributes
+    ----------
+    recipes : dict
+        A dictionary of recipes available for the machine type.
+    cached_recipe : str or None
+        The last successfully used recipe.
+    selected_recipe : str or None
+        A manually selected recipe to force the machine to craft.
+    require_selection : bool
+        If True, the machine requires a recipe to be manually selected.
+    lookup_map : dict
+        A mapping of input items to output items for quick lookup.
+    """
+    def __init__(self, machine_type: str, require_selection: bool):
+        """
+        Initializes the RecipeManager.
+
+        Parameters
+        ----------
+        machine_type : str
+            The type of machine requesting recipes.
+        require_selection : bool
+            Whether the machine strictly requires manual recipe selection.
+        """
+        self.recipes = machine_registry.get_recipes(machine_type)
+        self.cached_recipe = None
+        self.selected_recipe = None
+        self.require_selection = require_selection
+
+        self.lookup_map = {}
+        if not self.require_selection:
+            for output_item, ingredients in self.recipes.items():
+                input_name = next(iter(ingredients.keys()))
+                self.lookup_map[input_name] = output_item
+
+    def set_recipe(self, recipe_name):
+        """
+        Manually sets a specific recipe for the machine.
+
+        Parameters
+        ----------
+        recipe_name : str
+            The name of the recipe to set.
+
+        Returns
+        -------
+        bool
+            True if the recipe is valid and set, False otherwise.
+        """
+        if recipe_name in self.recipes:
+            self.selected_recipe = recipe_name
+            self.cached_recipe = None
+            return True
+        return False
+
+    def has_ingredients(self, required_items, inventory):
+        """
+        Checks if the inventory has the required ingredients for a recipe.
+
+        Parameters
+        ----------
+        required_items : dict
+            The required items and their quantities.
+        inventory : InventoryComponent
+            The inventory to check against.
+
+        Returns
+        -------
+        bool
+            True if all ingredients are present in sufficient quantities, False otherwise.
+        """
+        for item_name, amount in required_items.items():
+            if item_name not in inventory.slots:
+                return False
+            if inventory.slots.get(item_name).current_amount < amount:
+                return False
+        return True
+
+    def find_valid_recipe(self, inventory: InventoryComponent):
+        """
+        Finds a valid recipe based on the current inventory contents.
+
+        Parameters
+        ----------
+        inventory : InventoryComponent
+            The machine's input inventory.
+
+        Returns
+        -------
+        str or None
+            The name of the valid recipe if found, otherwise None.
+        """
+        if self.selected_recipe is not None:
+            required_ingredients = self.recipes[self.selected_recipe]
+            if self.has_ingredients(required_ingredients, inventory):
+                return self.selected_recipe
+            return None
+        
+        if self.require_selection:
+            return None
+
+        if self.cached_recipe is not None:
+            required_ingredients = self.recipes[self.cached_recipe]
+            if self.has_ingredients(required_ingredients, inventory):
+                return self.cached_recipe
+            else:
+                self.cached_recipe = None
+
+        if not inventory.slots:
+            return None
+        
+        for item_name in inventory.slots:
+            if item_name in self.lookup_map:
+                output = self.lookup_map[item_name]
+                required_items = self.recipes[output]
+
+                if self.has_ingredients(required_items, inventory):
+                    self.cached_recipe = output
+                    return output
+
+        return None
+
+
+class InputComponent:
+    """
+    Component that handles incoming connections and items from other entities.
+
+    Attributes
+    ----------
+    owner : object
+        The parent object owning this component.
+    sources : list
+        A list of source objects connected to this input.
+    max_sources : int or None
+        The maximum number of sources allowed to connect.
+    """
+    def __init__(self, owner, max_sources=None):
+        """
+        Initializes the InputComponent.
+
+        Parameters
+        ----------
+        owner : object
+            The entity that owns this input.
+        max_sources : int, optional
+            The maximum number of input sources allowed.
+        """
+        self.owner = owner
+        self.sources = []
+        self.max_sources = max_sources
+
+    def add(self, source):
+        """
+        Adds a new source to the input.
+
+        Parameters
+        ----------
+        source : object
+            The source object trying to connect.
+
+        Returns
+        -------
+        bool
+            True if the source was successfully added, False otherwise.
+        """
+        if source not in self.sources:
+            if self.max_sources is not None and len(self.sources) >= self.max_sources:
+                return False
+            self.sources.append(source)
+            return True
+        return False
+
+    def remove(self, source):
+        """
+        Removes a source from the input.
+
+        Parameters
+        ----------
+        source : object
+            The source object to remove.
+        """
+        if source in self.sources:
+            self.sources.remove(source)
+
+    def ping(self):
+        """
+        Pings all connected sources to notify them of an update or unjamming event.
+        """
+        for source in self.sources:
+            source.is_jammed = False
+            if hasattr(source, 'inventory_changed'):
+                source.inventory_changed = True
+
+
+class OutputComponent:
+    """
+    Component that handles outgoing connections to forward items to other entities.
+
+    Attributes
+    ----------
+    owner : object
+        The parent object owning this component.
+    target : object or None
+        The current target entity connected to this output.
+    """
+    def __init__(self, owner):
+        """
+        Initializes the OutputComponent.
+
+        Parameters
+        ----------
+        owner : object
+            The entity that owns this output.
+        """
+        self.owner = owner
+        self.target = None
+
+    def bind(self, target):
+        """
+        Binds this output to a target entity's input.
+
+        Parameters
+        ----------
+        target : object
+            The target entity to connect to.
+        """
+        self.target = target
+        if hasattr(target, 'input'):
+            target.input.add(self.owner)
+
+    def unbind(self):
+        """Unbinds this output from the current target entity."""
+        if self.target and hasattr(self.target, 'input'):
+            self.target.input.remove(self.owner)
+            self.target = None
+
 
 class Machine:
     """
@@ -31,32 +385,187 @@ class Machine:
     ----------
     level : int
         The current upgrade level of the machine.
-    processing_speed : float
+    base_speed : float
         The base speed at which the machine processes items.
     """
-    def __init__(self, x_pos, y_pos, base_speed):
-        self.position = Position(x_pos, y_pos)
-        self.level = 1
-        self.processing_speed = base_speed
-
-    def process_tick(self):
-        raise NotImplementedError
-
-    def upgrade(self, player_inventory):
+    def __init__(self, x_pos, y_pos, machine_type):
         """
-        Handles the logic for leveling up the machine.
+        Initializes the Machine.
 
         Parameters
         ----------
-        player_inventory : Inventory
-            The global inventory holding upgrade items.
-
-        Raises
-        ------
-        NotImplementedError
-            If the child class does not implement the upgrade logic.
+        x_pos : int or float
+            The x-coordinate of the machine.
+        y_pos : int or float
+            The y-coordinate of the machine.
+        machine_type : str
+            The identifier type of the machine.
         """
-        raise NotImplementedError
+        self.position = Position(x_pos, y_pos)
+        self.machine_type = machine_type
+        self.level = 1
+
+        metadata = machine_registry.get_metadata(machine_type)
+
+        self.base_speed = metadata.get("base_speed", 120)
+        is_strict = metadata.get("require_selection", False)
+
+        self.recipe_manager = RecipeManager(machine_type, is_strict)
+        self.input_inventory = InventoryComponent()
+        self.output_inventory = InventoryComponent()
+
+        self.output = OutputComponent(self)
+        self.input = InputComponent(self)
+
+        self.is_processing = False
+        self.processing_timer = 0.0
+        self.current_crafting_item = None
+        self.inventory_changed = False
+        self.is_jammed = False
+
+    def accept_item(self, item_name: str) -> bool:
+        """
+        Receives an item from an external source and wakes up the machine.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the item being received.
+
+        Returns
+        -------
+        bool
+            True if the item was accepted, False if the input inventory is full.
+        """
+        flag = self.input_inventory.add_item(item_name)
+        if flag:
+            self.inventory_changed = True
+        return flag
+
+    def process_tick(self):
+        """Processes a single tick of the machine's core logic."""
+        if not self.is_jammed:
+            if self.output.target and self.output_inventory.slots:
+                item_to_push = next(iter(self.output_inventory.slots))
+                if self.output.target.accept_item(item_to_push):
+                    self.output_inventory.remove_items({item_to_push: 1})
+                else:
+                    self.is_jammed = True
+
+        if self.is_processing:
+            self.processing_timer -= 1
+            if self.processing_timer <= 0:
+                flag = self.output_inventory.add_item(self.current_crafting_item)
+                if flag:
+                    self.is_processing = False
+                    self.current_crafting_item = None
+                    self.inventory_changed = True
+                    self.is_jammed = False
+            return
+        
+        if not self.inventory_changed:
+            return
+        
+        recipe = self.recipe_manager.find_valid_recipe(self.input_inventory)
+
+        if recipe is not None:
+            ingredients = self.recipe_manager.recipes[recipe]
+            self.input_inventory.remove_items(ingredients)
+
+            self.current_crafting_item = recipe
+            self.processing_timer = self.base_speed / (2 ** (self.level - 1))
+            self.is_processing = True
+            self.inventory_changed = True
+            self.input.ping()
+        else:
+            self.inventory_changed = False
+
+    def set_machine_recipe(self, recipe_name):
+        """
+        Sets a specific recipe for the machine and configures inventories.
+
+        Parameters
+        ----------
+        recipe_name : str
+            The name of the recipe to set.
+
+        Returns
+        -------
+        bool
+            True if the recipe was successfully set, False otherwise.
+        """
+        flag = self.recipe_manager.set_recipe(recipe_name)
+
+        if flag:
+            ingredients = self.recipe_manager.recipes[recipe_name]
+
+            input_limit = {}
+
+            for item_name, amount in ingredients.items():
+                input_limit[item_name] = amount * 4
+
+            self.input_inventory.configure_stack_limit(input_limit)
+            self.output_inventory.configure_stack_limit({recipe_name: 100})
+
+            self.is_processing = False
+            self.current_crafting_item = None
+            self.inventory_changed = True
+
+        return flag
+
+    def upgrade(self, player_inventory):
+        """
+        Upgrades the machine to the next level by deducting required items.
+
+        Parameters
+        ----------
+        player_inventory : object
+            The inventory of the player making the upgrade.
+
+        Returns
+        -------
+        bool
+            True if the machine was upgraded successfully, False otherwise.
+        """
+        if self.level >= 4:
+            return False
+        
+        costs = machine_registry.get_metadata(self.machine_type).get("upgrade_costs", [])
+        cost = costs[self.level - 1]
+        
+        flag = player_inventory.deduct_item(cost)
+        
+        if flag:
+            self.level += 1
+
+        return flag
+
+
+class TransportedItem:
+    """
+    Represents an item currently being transported on a conveyor.
+
+    Attributes
+    ----------
+    item_name : str
+        The name of the item.
+    progress : float
+        The progress of the item along the conveyor (between 0.0 and 1.0).
+    """
+    def __init__(self, item_name, progress=0.0):
+        """
+        Initializes the TransportedItem.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the item being transported.
+        progress : float, optional
+            The initial progress value.
+        """
+        self.item_name = item_name
+        self.progress = progress
+
 
 class Conveyor:
     """
@@ -64,64 +573,388 @@ class Conveyor:
 
     Attributes
     ----------
-    direction : str
-        The direction the conveyor is moving items (e.g., 'UP', 'DOWN').
-    carrying_item : str or None
-        The item currently being transported.
+    items : list
+        A list of TransportedItem objects currently on the conveyor.
+    speed : float
+        The speed at which items move.
+    spacing : float
+        The minimum progress gap between consecutive items.
     """
-    def __init__(self, x_pos, y_pos, direction):
+    def __init__(self, x_pos, y_pos, input_dir, output_dir):
+        """
+        Initializes the Conveyor.
+
+        Parameters
+        ----------
+        x_pos : int or float
+            The x-coordinate of the conveyor.
+        y_pos : int or float
+            The y-coordinate of the conveyor.
+        input_dir : str
+            The direction from which items enter.
+        output_dir : str
+            The direction to which items are forwarded.
+        """
         self.position = Position(x_pos, y_pos)
-        self.direction = direction
-        self.carrying_item = None
+        self.input_dir = input_dir
+        self.output_dir = output_dir
+
+        self.items = []
+        
+        self.speed = 0.1
+        self.spacing = 0.25
+        self.input = InputComponent(self, max_sources=1)
+        self.output = OutputComponent(self)
+        self.is_jammed = False
+
+    def accept_item(self, item_name: str) -> bool:
+        """
+        Accepts a new item onto the start of the conveyor.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the item to accept.
+
+        Returns
+        -------
+        bool
+            True if the item was accepted, False if there is not enough spacing.
+        """
+        if self.items:
+            last_item = self.items[-1]
+            if last_item.progress < self.spacing:
+                return False
+                
+        new_item = TransportedItem(item_name, progress=0.0)
+        self.items.append(new_item)
+        return True
 
     def process_tick(self):
-        """
-        Moves the carried item to the next grid cell based on direction.
-        """
-        pass
+        """Processes the movement of all items on the conveyor for a single tick."""
+        if not self.items:
+            self.is_jammed = False
+            self.input.ping()
+            return
 
-class InventorySlot:
+        for i, item in enumerate(self.items):
+            if i == 0:
+                cap = 1.0
+            else:
+                cap = self.items[i - 1].progress - self.spacing
+
+            if item.progress < cap:
+                item.progress = min(item.progress + self.speed, cap)
+
+        front = self.items[0]
+        if front.progress >= 1.0:
+            if self.output.target and self.output.target.accept_item(front.item_name):
+                self.items.pop(0)
+                self.is_jammed = False
+                self.input.ping()
+            else:
+                self.is_jammed = True
+        
+
+class Merger:
     """
-    Represents a single storage slot within a container.
+    Merges items from multiple input sources into a single output stream.
 
     Attributes
     ----------
-    item_name : str or None
-        The name of the item stored in this slot.
-    current_amount : int
-        The current number of items in this slot.
-    max_capacity : int
-        The maximum number of items this slot can hold.
+    buffer : deque
+        A queue temporarily holding items before they are pushed out.
     """
-    def __init__(self, max_capacity):
-        self.item_name = None
-        self.current_amount = 0
-        self.max_capacity = max_capacity
+    def __init__(self, x_pos, y_pos, buffer_size=16):
+        """
+        Initializes the Merger.
 
-class Container:
-    """
-    Storage unit that holds items using a slot-based system.
-
-    Attributes
-    ----------
-    inventory : InventoryComponent
-        The component handling inventory slots and storage logic.
-    """
-    def __init__(self, x_pos, y_pos, max_slots, stack_limit):
+        Parameters
+        ----------
+        x_pos : int or float
+            The x-coordinate of the merger.
+        y_pos : int or float
+            The y-coordinate of the merger.
+        buffer_size : int, optional
+            The maximum number of items the merger can hold in its buffer.
+        """
         self.position = Position(x_pos, y_pos)
-        self.inventory = InventoryComponent(max_slots, stack_limit)
+        self.input = InputComponent(self)
+        self.output = OutputComponent(self)
+        self.is_jammed = False
+        self.buffer = deque(maxlen=buffer_size)
+
+    def accept_item(self, item_name: str) -> bool:
+        """
+        Accepts an item into the merger's buffer.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the incoming item.
+
+        Returns
+        -------
+        bool
+            True if accepted, False if the buffer is full.
+        """
+        if len(self.buffer) == self.buffer.maxlen:
+            return False
+        self.buffer.append(item_name)
+        if len(self.buffer) == self.buffer.maxlen:
+            for source in self.input.sources:
+                source.is_jammed = True
+        return True
+
+    def process_tick(self):
+        """Processes a single tick, pushing buffered items to the target output."""
+        if not self.buffer or not self.output.target:
+            return
+
+        if self.output.target.accept_item(self.buffer[0]):
+            self.buffer.popleft()
+            self.input.ping()
+        else:
+            self.is_jammed = True
+
+
+class Splitter:
+    """
+    Distributes an incoming stream of items across multiple outputs based on weights.
+
+    Attributes
+    ----------
+    buffer : deque
+        A queue temporarily holding items before they are pushed out.
+    outputs : list
+        A list of OutputComponent instances for the split paths.
+    weights : list of int
+        Ratios dictating the distribution of items to each output.
+    """
+    def __init__(self, x_pos, y_pos, output_dirs: list[str], weights=None):
+        """
+        Initializes the Splitter.
+
+        Parameters
+        ----------
+        x_pos : int or float
+            The x-coordinate of the splitter.
+        y_pos : int or float
+            The y-coordinate of the splitter.
+        output_dirs : list of str
+            Directions corresponding to the output slots.
+        weights : list of int, optional
+            Ratios determining the distribution weight per output.
+        """
+        self.position = Position(x_pos, y_pos)
+
+        self.input = InputComponent(self, max_sources=1)
+        self.outputs = [OutputComponent(self) for _ in range(3)]
+
+        self.output_dirs = output_dirs
+        self.weights = weights if weights is not None else [1, 1, 1]
+        self.is_jammed = False
+        self.buffer = deque(maxlen=16)
+
+        self.current_output = 0
+        self.current_count = 0
+
+    def bind_output(self, target, slot: int):
+        """
+        Binds a specific output slot to a target.
+
+        Parameters
+        ----------
+        target : object
+            The target entity.
+        slot : int
+            The output slot index (0-2).
+        """
+        self.outputs[slot].bind(target)
+
+    def unbind_output(self, slot: int):
+        """
+        Unbinds a specific output slot.
+
+        Parameters
+        ----------
+        slot : int
+            The output slot index (0-2).
+        """
+        self.outputs[slot].unbind()
+
+    def accept_item(self, item_name: str) -> bool:
+        """
+        Accepts an item into the splitter's buffer.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the incoming item.
+
+        Returns
+        -------
+        bool
+            True if accepted, False if the buffer is full.
+        """
+        if len(self.buffer) == self.buffer.maxlen:
+            return False
+        self.buffer.append(item_name)
+        return True
+
+    def _next_valid_output(self):
+        """
+        Finds the next available valid output slot based on weights.
+
+        Returns
+        -------
+        int or None
+            The index of the next valid output slot, or None if none are available.
+        """
+        for i in range(3):
+            slot = (self.current_output + i) % 3
+            if self.weights[slot] > 0 and self.outputs[slot].target:
+                return slot
+        return None
+
+    def process_tick(self):
+        """Processes a single tick, routing items to the valid outputs."""
+        if not self.buffer:
+            self.is_jammed = False
+            self.input.ping()
+            return
+
+        slot = self._next_valid_output()
+        if slot is None:
+            return
+
+        target = self.outputs[slot].target
+        if target.accept_item(self.buffer[0]):
+            self.buffer.popleft()
+            self.current_count += 1
+            if self.current_count >= self.weights[slot]:
+                self.current_count = 0
+                self.current_output = (self.current_output + 1) % 3
+            self.is_jammed = False
+            self.input.ping()
+        else:
+            self.is_jammed = True
+
+
+class Filter:
+    """
+    Routes items to specific output targets based on item names.
+
+    Attributes
+    ----------
+    filters : dict
+        A mapping of item names to output slot indices.
+    """
+    def __init__(self, x_pos, y_pos, output_dirs, fallback_dir, filters=None):
+        """
+        Initializes the Filter.
+
+        Parameters
+        ----------
+        x_pos : int or float
+            The x-coordinate of the filter.
+        y_pos : int or float
+            The y-coordinate of the filter.
+        output_dirs : list of str
+            Directions corresponding to the filtered output slots.
+        fallback_dir : str
+            The direction for items that do not match any filter.
+        filters : dict, optional
+            A dictionary mapping item names to an output slot integer.
+        """
+        self.position = Position(x_pos, y_pos)
+        self.output_dirs = output_dirs
+        self.fallback_dir = fallback_dir
+
+        self.input = InputComponent(self, max_sources=1)
+        self.outputs = [OutputComponent(self), OutputComponent(self)]
+        self.fallback = OutputComponent(self)
+
+        self.filters = filters if filters is not None else {}
+        self.is_jammed = False
+        self.buffer = deque(maxlen=16)
+
+    def bind_output(self, target, slot):
+        """
+        Binds a specific filtered output to a target.
+
+        Parameters
+        ----------
+        target : object
+            The target entity.
+        slot : int
+            The slot index to bind.
+        """
+        self.outputs[slot].bind(target)
+
+    def unbind_output(self, slot):
+        """
+        Unbinds a specific filtered output.
+
+        Parameters
+        ----------
+        slot : int
+            The slot index to unbind.
+        """
+        self.outputs[slot].unbind()
+
+    def bind_fallback(self, target):
+        """
+        Binds the fallback output to a target.
+
+        Parameters
+        ----------
+        target : object
+            The target entity for unmatched items.
+        """
+        self.fallback.bind(target)
+
+    def unbind_fallback(self):
+        """Unbinds the fallback output."""
+        self.fallback.unbind()
 
     def accept_item(self, item_name):
         """
-        Delegates storing items to the inventory component.
+        Accepts an item into the filter buffer.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the incoming item.
+
+        Returns
+        -------
+        bool
+            True if accepted, False if the buffer is full.
         """
-        return self.inventory.add_item(item_name)
+        if len(self.buffer) == self.buffer.maxlen:
+            return False
+        self.buffer.append(item_name)
+        return True
 
     def process_tick(self):
-        """
-        Containers are passive and do not perform active tick actions.
-        """
-        pass
+        """Processes a single tick, routing the front item based on the filter list."""
+        if not self.buffer:
+            self.is_jammed = False
+            self.input.ping()
+            return
+
+        item_name = self.buffer[0]
+        slot = self.filters.get(item_name)
+        out_component = self.outputs[slot] if slot is not None else self.fallback
+    
+        if out_component.target and out_component.target.accept_item(item_name):
+            self.buffer.popleft()
+            self.is_jammed = False
+            self.input.ping()
+        else:
+            self.is_jammed = True
+
 
 class Seller:
     """
@@ -131,15 +964,25 @@ class Seller:
     ----------
     economy : Economy
         Reference to the global economy manager.
-    prices : dict
-        Catalog mapping item names to their respective prices.
     input_buffer : list
         Temporarily stores incoming items before they are sold.
     """
-    def __init__(self, x_pos, y_pos, economy_manager, price_catalog):
+    def __init__(self, x_pos, y_pos, economy_manager):
+        """
+        Initializes the Seller block.
+
+        Parameters
+        ----------
+        x_pos : int or float
+            The x-coordinate of the seller.
+        y_pos : int or float
+            The y-coordinate of the seller.
+        economy_manager : Economy
+            The economy manager handling player funds.
+        """
         self.position = Position(x_pos, y_pos)
         self.economy = economy_manager
-        self.prices = price_catalog
+        self.input = InputComponent(self)
         self.input_buffer = []
 
     def accept_item(self, item_name):
@@ -160,17 +1003,69 @@ class Seller:
         return True
 
     def process_tick(self):
-        """
-        Sells all items in the buffer and clears it.
-        """
+        """Sells all items in the buffer and clears it."""
         if not self.input_buffer:
             return
 
         total = 0
         for item in self.input_buffer:
-            # Tra cứu giá, nếu không có mặc định là 0
-            price = self.prices.get(item, 0) 
+            price = item_registry.get_price(item) 
             total += price
 
         self.economy.add_money(total)
+        self.input_buffer.clear()
+
+
+class CentralStorage:
+    """
+    Accepts items and places them directly into the player's main inventory.
+
+    Attributes
+    ----------
+    inventory : object
+        The main player inventory.
+    input_buffer : list
+        Temporarily stores incoming items before moving them to storage.
+    """
+    def __init__(self, x_pos, y_pos, player_inventory):
+        """
+        Initializes the CentralStorage.
+
+        Parameters
+        ----------
+        x_pos : int or float
+            The x-coordinate of the storage.
+        y_pos : int or float
+            The y-coordinate of the storage.
+        player_inventory : object
+            The player's main inventory to deposit items into.
+        """
+        self.position = Position(x_pos, y_pos)
+        self.inventory = player_inventory
+        self.input = InputComponent(self)
+        self.input_buffer = []
+
+    def accept_item(self, item_name):
+        """
+        Receives an item into the internal buffer for storage.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the item to be stored.
+
+        Returns
+        -------
+        bool
+            Always returns True as the storage component buffers dynamically.
+        """
+        self.input_buffer.append(item_name)
+        return True
+
+    def process_tick(self):
+        """Deposits all items currently in the buffer into the player inventory."""
+        if not self.input_buffer:
+            return
+        for item in self.input_buffer:
+            self.inventory.add_item(item, 1)
         self.input_buffer.clear()

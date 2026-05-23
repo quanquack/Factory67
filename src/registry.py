@@ -1,0 +1,173 @@
+import json
+import os
+
+class MachineRegistry:
+    """
+    Centralized registry loading both metadata and recipes from JSON files.
+
+    Attributes
+    ----------
+    machine_data : dict
+        A dictionary storing parsed JSON data for all machine types.
+    """
+    def __init__(self):
+        self.machine_data = {}
+
+    def load_from_directory(self, folder_path: str):
+        """
+        Iterates through a folder, loading every .json file.
+        Assumes JSON structure: {"metadata": {...}, "recipes": {...}}
+
+        Parameters
+        ----------
+        folder_path : str
+            The path to the directory containing machine JSON files.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the specified folder_path does not exist.
+        """
+        if not os.path.exists(folder_path):
+            raise FileNotFoundError(f"Critical Error: Folder {folder_path} not found!")
+
+        for filename in os.listdir(folder_path):
+            if filename.endswith(".json"):
+                machine_type = filename.replace(".json", "")
+                file_path = os.path.join(folder_path, filename)
+                
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    self.machine_data[machine_type] = json.load(f)
+                    
+        print(f"Successfully loaded data for: {list(self.machine_data.keys())}")
+
+    def get_recipes(self, machine_type: str) -> dict:
+        """
+        Retrieves the recipe dictionary for a specific machine type.
+
+        Parameters
+        ----------
+        machine_type : str
+            The identifier for the machine type.
+
+        Returns
+        -------
+        dict
+            The recipes available for the machine, or an empty dictionary if not found.
+        """
+        return self.machine_data.get(machine_type, {}).get("recipes", {})
+
+    def get_metadata(self, machine_type: str) -> dict:
+        """
+        Retrieves the intrinsic configuration metadata for a machine type.
+
+        Parameters
+        ----------
+        machine_type : str
+            The identifier for the machine type.
+
+        Returns
+        -------
+        dict
+            The metadata configuration, or an empty dictionary if not found.
+        """
+        return self.machine_data.get(machine_type, {}).get("metadata", {})
+
+
+class ItemRegistry:
+    """
+    Centralized registry managing item properties and values.
+
+    Attributes
+    ----------
+    item_data : dict
+        A dictionary storing properties for all items.
+    """
+    def __init__(self):
+        self.item_data = {}
+
+    def load_from_directory(self, folder_path: str):
+        """
+        Loads item data from all JSON files within a specified directory.
+
+        Parameters
+        ----------
+        folder_path : str
+            The path to the directory containing item JSON files.
+
+        Raises
+        ------
+        FileNotFoundError
+            If the specified folder_path does not exist.
+        """
+        if not os.path.exists(folder_path):
+            raise FileNotFoundError(f"Critical Error: Folder {folder_path} not found!")
+        
+        for filename in os.listdir(folder_path):
+            if filename.endswith(".json"):
+                with open(os.path.join(folder_path, filename), 'r', encoding='utf-8') as f:
+                    self.item_data.update(json.load(f))
+
+    def load_from_file(self, file_path: str):
+        """
+        Loads item data from a single JSON file.
+
+        Parameters
+        ----------
+        file_path : str
+            The exact path to the target JSON file.
+        """
+        with open(file_path, 'r', encoding='utf-8') as f:
+            self.item_data = json.load(f)
+
+    def get_price(self, item_name: str) -> int:
+        """
+        Retrieves the base price of an item.
+
+        Parameters
+        ----------
+        item_name : str
+            The internal identifier of the item.
+
+        Returns
+        -------
+        int
+            The price of the item, or 0 if not defined.
+        """
+        return self.item_data.get(item_name, {}).get("price", 0)
+
+    def get_image(self, item_name: str) -> str:
+        """
+        Retrieves the file path or identifier for the item's texture.
+
+        Parameters
+        ----------
+        item_name : str
+            The internal identifier of the item.
+
+        Returns
+        -------
+        str or None
+            The image path, or None if not defined.
+        """
+        return self.item_data.get(item_name, {}).get("image", None)
+
+    def get_display_name(self, item_name: str) -> str:
+        """
+        Retrieves the localized or formatted display name of an item.
+
+        Parameters
+        ----------
+        item_name : str
+            The internal identifier of the item.
+
+        Returns
+        -------
+        str
+            The display name, or the internal item_name if no display name is defined.
+        """
+        return self.item_data.get(item_name, {}).get("display_name", item_name)
+
+
+machine_registry = MachineRegistry()
+item_registry = ItemRegistry()
