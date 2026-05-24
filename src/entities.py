@@ -44,6 +44,15 @@ class Position:
             "S": Position(self.x, self.y - 1),
             "W": Position(self.x - 1, self.y)
         }
+    
+    def get_opposite(self, direction):
+        opposite = {
+            "N": "S",
+            "S": "N",
+            "W": "E",
+            "E": "W"
+        }
+        return opposite.get(direction, "")
 
 
 class InventorySlot:
@@ -396,6 +405,11 @@ class OutputComponent:
             self.target.input.remove(self.owner)
             self.target = None
 
+    def try_push(self, item_name):
+        if self.target:
+            return self.target.accept_item(item_name)
+        return False
+
 
 class ConnectionComponent:
     def __init__(self, owner):
@@ -404,24 +418,20 @@ class ConnectionComponent:
     def update_outbound(self, game_map):
         adj_pos = self.owner.position.get_adjacent()
 
-        if hasattr(self.owner, "output_dir") and hasattr(self.owner, "output"):
-            out_pos = adj_pos.get(self.owner.output_dir)
-            if out_pos:
-                target_block = game_map.get_block_at(*out_pos.get_coord())
-                if target_block and hasattr(target_block, "input"):
-                    self.owner.output.bind(target_block)
-                else:
-                    self.owner.output.unbind()
+        outbound_ports = self.owner.get_outbound_ports()
 
-        if hasattr(self.owner, "output_dirs") and hasattr(self.owner, "outputs"):
-            for i, out_dir in enumerate(self.owner.output_dirs):
-                out_coord = adj_pos.get(out_dir)
-                if out_coord:
-                    target_block = game_map.get_block_at(*out_coord.get_coord())
-                    if target_block and hasattr(target_block, "input"):
-                        self.owner.bind_output(target_block, i)
-                    else:
-                        self.owner.bind_output(i)
+        for output_dir, output_component in outbound_ports.items():
+            target_pos = adj_pos.get(output_dir)
+            target_block = game_map.get_block_at(*target_pos.get_coord()) if target_pos else None
+
+            if target_block:
+                opposite_dir = self.owner.position.get_opposite(output_dir)
+                in_comp = target_block.get_inbound_port(opposite_dir)
+                if in_comp:
+                    output_component.bind(target_block)
+                    continue
+            
+            output_component.unbind()
 
     def _ping_adj(self, game_map):
         for direction, pos in self.owner.position.get_adjacent().items():
@@ -434,11 +444,10 @@ class ConnectionComponent:
         self._ping_adj(game_map)
 
     def on_break(self, game_map):
-        if hasattr(self.owner, "output"):
-            self.owner.output.unbind()
-            
+        for out_comp in self.owner.get_outbound_ports().values():
+            out_comp.unbind()
         game_map.grid.pop(self.owner.position.get_coord(), None)
-        self._ping_neighbors(game_map)
+        self._ping_adj(game_map)
 
 
 class Machine:
@@ -452,7 +461,9 @@ class Machine:
     base_speed : float
         The base speed at which the machine processes items.
     """
-    def __init__(self, x_pos, y_pos, output_dir, machine_type):
+    def __init__(self, x_pos, y_pos, output_dir, machine_type,
+                 input_component=None, output_component=None, 
+                 input_inv=None, output_inv=None):
         """
         Initializes the Machine.
 
@@ -476,11 +487,13 @@ class Machine:
         is_strict = metadata.get("require_selection", False)
 
         self.recipe_manager = RecipeManager(machine_type, is_strict)
-        self.input_inventory = InventoryComponent()
-        self.output_inventory = InventoryComponent()
+        self.input_inventory = InventoryComponent() if input_inv is None else input_inv
+        self.output_inventory = InventoryComponent() if output_inv is None else output_inv
 
-        self.output = OutputComponent(self)
-        self.input = InputComponent(self)
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.output.owner = self
+        self.input.owner = self
         self.connection = ConnectionComponent(self)
 
         self.is_processing = False
@@ -514,10 +527,11 @@ class Machine:
     def process_tick(self):
         """Processes a single tick of the machine's core logic."""
         if not self.is_jammed:
-            if self.output.target and self.output_inventory.slots:
+            if self.output_inventory.slots:
                 item_to_push = next(iter(self.output_inventory.slots))
-                if self.output.target.accept_item(item_to_push):
+                if self.output.try_push(item_to_push):
                     self.output_inventory.remove_items({item_to_push: 1})
+                    self.is_jammed = False
                 else:
                     self.is_jammed = True
 
@@ -609,6 +623,14 @@ class Machine:
 
         return flag
     
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        if direction != self.output_dir:
+            return self.input
+        return None
+    
 
 class Miner:
     """
@@ -623,7 +645,8 @@ class Miner:
     level : int
         The current upgrade level of the miner.
     """
-    def __init__(self, x_pos, y_pos, ore, output_dir):
+    def __init__(self, x_pos, y_pos, ore, output_dir,
+                 output_component=None):
         """
         Initializes the Miner block.
 
@@ -642,7 +665,8 @@ class Miner:
         self.level = 1
         self.base_speed = machine_registry.get_metadata("miner").get("base_speed", 60)
 
-        self.output = OutputComponent(self)
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.output.owner = self
         self.connection = ConnectionComponent(self)
 
         self.processing_timer = self.base_speed
@@ -654,18 +678,19 @@ class Miner:
     def process_tick(self):
         """Processes a single tick, generating and pushing the target ore."""
         if self.is_jammed:
-            if self.output.target and self.output.target.accept_item(self.ore):
-                self.is_jammed = False
+            if self.output.try_push(self.ore):
                 self.processing_timer = self._get_timer()
+                self.is_jammed = False
             return
 
         self.processing_timer -= 1
         
         if self.processing_timer <= 0:
-            if self.output.target and self.output.target.accept_item(self.ore):
+            if self.output.try_push(self.ore):
                 self.processing_timer = self._get_timer()
             else:
                 self.is_jammed = True
+            return
 
     def upgrade(self, player_inventory):
         """
@@ -695,6 +720,13 @@ class Miner:
             return flag
             
         return False
+
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        return None
+
 
 class TransportedItem:
     """
@@ -735,7 +767,8 @@ class Conveyor:
     spacing : float
         The minimum progress gap between consecutive items.
     """
-    def __init__(self, x_pos, y_pos, input_dir, output_dir):
+    def __init__(self, x_pos, y_pos, input_dir, output_dir,
+                 input_component=None, output_component=None):
         """
         Initializes the Conveyor.
 
@@ -759,8 +792,10 @@ class Conveyor:
         
         self.speed = 0.1
         self.spacing = 0.25
-        self.input = InputComponent(self, max_sources=1)
-        self.output = OutputComponent(self)
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.input = InputComponent(self, max_sources=1) if input_component is None else input_component
+        self.output.owner = self
+        self.input.owner = self
         self.connection = ConnectionComponent(self)
 
         self.is_jammed = False
@@ -815,12 +850,20 @@ class Conveyor:
 
         front = self.items[0]
         if front.progress >= 1.0:
-            if self.output.target and self.output.target.accept_item(front.item_name):
+            if self.output.try_push(front.item_name):
                 self.items.pop(0)
-                self.is_jammed = False
                 self.input.ping()
+                self.is_jammed = False
             else:
                 self.is_jammed = True
+
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        if direction == self.input_dir:
+            return self.input
+        return None
         
 
 class Merger:
@@ -832,7 +875,8 @@ class Merger:
     buffer : deque
         A queue temporarily holding items before they are pushed out.
     """
-    def __init__(self, x_pos, y_pos, output_dir, buffer_size=16):
+    def __init__(self, x_pos, y_pos, output_dir, buffer_size=16, 
+                 input_component=None, output_component=None):
         """
         Initializes the Merger.
 
@@ -848,8 +892,10 @@ class Merger:
         self.position = Position(x_pos, y_pos)
         self.output_dir = output_dir
 
-        self.input = InputComponent(self)
-        self.output = OutputComponent(self)
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.output.owner = self
+        self.input.owner = self
         self.connection = ConnectionComponent(self)
 
         self.is_jammed = False
@@ -872,7 +918,7 @@ class Merger:
         """
         if len(self.buffer) + len(self.pending_buffer) >= self.buffer.maxlen:
             return False
-        self.buffer.append(item_name)
+        self.pending_buffer.append(item_name)
         if len(self.buffer) + len(self.pending_buffer) >= self.buffer.maxlen:
             for source in self.input.sources:
                 source.is_jammed = True
@@ -886,11 +932,20 @@ class Merger:
         if not self.buffer or not self.output.target:
             return
 
-        if self.output.target.accept_item(self.buffer[0]):
+        if self.output.try_push(self.buffer[0]):
             self.buffer.popleft()
             self.input.ping()
+            self.is_jammed = False
         else:
             self.is_jammed = True
+        
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        if direction != self.output_dir:
+            return self.input
+        return None
 
 
 class Router:
@@ -906,7 +961,8 @@ class Router:
     weights : list of int
         Ratios dictating the distribution of items to each output.
     """
-    def __init__(self, x_pos, y_pos, input_dir, mode="split", buffer_size=16):
+    def __init__(self, x_pos, y_pos, input_dir, mode="split", buffer_size=16,
+                 input_component=None, output_component=None):
         """
         Initializes the Splitter.
 
@@ -924,8 +980,11 @@ class Router:
         self.position = Position(x_pos, y_pos)
         self.mode = mode
 
-        self.input = InputComponent(self, max_sources=1)
-        self.outputs = [OutputComponent(self) for _ in range(3)]
+        self.outputs = [OutputComponent(self) for _ in range(3)] if output_component is None else output_component
+        self.input = InputComponent(self, max_sources=1) if input_component is None else input_component
+        for out_comp in self.outputs:
+            out_comp.owner = self
+        self.input.owner = self
         self.connection = ConnectionComponent(self)
 
         self.input_dir = input_dir
@@ -1025,7 +1084,7 @@ class Router:
         if len(config) != 3:
             return False
         if self.mode == 'split':
-            if sum(1 for i in config if i >= 0):
+            if any(i > 0 for i in config):
                 self.config = config
                 return True
             return False
@@ -1056,8 +1115,7 @@ class Router:
 
         out_component = self.outputs[slot]  
 
-        if out_component.target and out_component.target.accept_item(item_name):
-            self.buffer.popleft()
+        if out_component.try_push(item_name):
 
             if self.mode == "split":
                 self.current_count += 1
@@ -1065,10 +1123,19 @@ class Router:
                     self.current_count = 0
                     self.current_output = (self.current_output + 1) % 3
 
+            self.buffer.popleft()
             self.is_jammed = False
             self.input.ping()
         else:
             self.is_jammed = True
+
+    def get_outbound_ports(self):
+        return dict(zip(self.output_dirs, self.outputs))
+        
+    def get_inbound_port(self, from_dir):
+        if from_dir == self.input_dir:
+            return self.input
+        return None
 
 
 class Seller:
@@ -1082,7 +1149,8 @@ class Seller:
     input_buffer : list
         Temporarily stores incoming items before they are sold.
     """
-    def __init__(self, x_pos, y_pos, economy_manager):
+    def __init__(self, x_pos, y_pos, economy_manager,
+                 input_component=None):
         """
         Initializes the Seller block.
 
@@ -1097,7 +1165,8 @@ class Seller:
         """
         self.position = Position(x_pos, y_pos)
         self.economy = economy_manager
-        self.input = InputComponent(self)
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.input.owner = self
         self.connection = ConnectionComponent(self)
         self.input_buffer = []
 
@@ -1131,6 +1200,12 @@ class Seller:
         self.economy.add_money(total)
         self.input_buffer.clear()
 
+    def get_outbound_ports(self):
+        return {}
+        
+    def get_inbound_port(self, from_dir):
+        return self.input
+
 
 class CentralStorage:
     """
@@ -1143,7 +1218,8 @@ class CentralStorage:
     input_buffer : list
         Temporarily stores incoming items before moving them to storage.
     """
-    def __init__(self, x_pos, y_pos, player_inventory):
+    def __init__(self, x_pos, y_pos, player_inventory,
+                 input_component=None):
         """
         Initializes the CentralStorage.
 
@@ -1158,7 +1234,8 @@ class CentralStorage:
         """
         self.position = Position(x_pos, y_pos)
         self.inventory = player_inventory
-        self.input = InputComponent(self)
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.input.owner = self
         self.connection = ConnectionComponent(self)
         self.input_buffer = []
 
@@ -1186,3 +1263,9 @@ class CentralStorage:
         for item in self.input_buffer:
             self.inventory.add_item(item, 1)
         self.input_buffer.clear()
+
+    def get_outbound_ports(self):
+        return {}
+        
+    def get_inbound_port(self, from_dir):
+        return self.input
