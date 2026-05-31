@@ -26,6 +26,34 @@ class Position:
         self.x = x
         self.y = y
 
+    def get_coord(self):
+        return (self.x, self.y)
+
+    def get_adjacent(self):
+        """
+        Calculates the coordinates of all directly adjacent tiles.
+
+        Returns
+        -------
+        dict
+            A mapping of cardinal directions ('N', 'S', 'E', 'W') to (x, y) tuples.
+        """
+        return {
+            "N": Position(self.x, self.y + 1),
+            "E": Position(self.x + 1, self.y),
+            "S": Position(self.x, self.y - 1),
+            "W": Position(self.x - 1, self.y)
+        }
+    
+    def get_opposite(self, direction):
+        opposite = {
+            "N": "S",
+            "S": "N",
+            "W": "E",
+            "E": "W"
+        }
+        return opposite.get(direction, "")
+
 
 class InventorySlot:
     """
@@ -135,6 +163,7 @@ class InventoryComponent:
         if stack_limit:
             for item in stack_limit:
                 self.slots[item] = InventorySlot(stack_limit[item])
+
 
 class RecipeManager:
     """
@@ -276,7 +305,7 @@ class InputComponent:
     max_sources : int or None
         The maximum number of sources allowed to connect.
     """
-    def __init__(self, owner, max_sources=None):
+    def __init__(self, owner, max_sources=3):
         """
         Initializes the InputComponent.
 
@@ -376,6 +405,50 @@ class OutputComponent:
             self.target.input.remove(self.owner)
             self.target = None
 
+    def try_push(self, item_name):
+        if self.target:
+            return self.target.accept_item(item_name)
+        return False
+
+
+class ConnectionComponent:
+    def __init__(self, owner):
+        self.owner = owner
+
+    def update_outbound(self, game_map):
+        adj_pos = self.owner.position.get_adjacent()
+
+        outbound_ports = self.owner.get_outbound_ports()
+
+        for output_dir, output_component in outbound_ports.items():
+            target_pos = adj_pos.get(output_dir)
+            target_block = game_map.get_block_at(*target_pos.get_coord()) if target_pos else None
+
+            if target_block:
+                opposite_dir = self.owner.position.get_opposite(output_dir)
+                in_comp = target_block.get_inbound_port(opposite_dir)
+                if in_comp:
+                    output_component.bind(target_block)
+                    continue
+            
+            output_component.unbind()
+
+    def _ping_adj(self, game_map):
+        for direction, pos in self.owner.position.get_adjacent().items():
+            neighbor = game_map.get_block_at(*pos.get_coord())
+            if neighbor and hasattr(neighbor, "connection"):
+                neighbor.connection.update_outbound(game_map)
+
+    def on_place(self, game_map):
+        self.update_outbound(game_map)
+        self._ping_adj(game_map)
+
+    def on_break(self, game_map):
+        for out_comp in self.owner.get_outbound_ports().values():
+            out_comp.unbind()
+        game_map.grid.pop(self.owner.position.get_coord(), None)
+        self._ping_adj(game_map)
+
 
 class Machine:
     """
@@ -388,7 +461,9 @@ class Machine:
     base_speed : float
         The base speed at which the machine processes items.
     """
-    def __init__(self, x_pos, y_pos, machine_type):
+    def __init__(self, x_pos, y_pos, output_dir, machine_type,
+                 input_component=None, output_component=None, 
+                 input_inv=None, output_inv=None):
         """
         Initializes the Machine.
 
@@ -402,6 +477,7 @@ class Machine:
             The identifier type of the machine.
         """
         self.position = Position(x_pos, y_pos)
+        self.output_dir = output_dir
         self.machine_type = machine_type
         self.level = 1
 
@@ -411,17 +487,23 @@ class Machine:
         is_strict = metadata.get("require_selection", False)
 
         self.recipe_manager = RecipeManager(machine_type, is_strict)
-        self.input_inventory = InventoryComponent()
-        self.output_inventory = InventoryComponent()
+        self.input_inventory = InventoryComponent() if input_inv is None else input_inv
+        self.output_inventory = InventoryComponent() if output_inv is None else output_inv
 
-        self.output = OutputComponent(self)
-        self.input = InputComponent(self)
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.output.owner = self
+        self.input.owner = self
+        self.connection = ConnectionComponent(self)
 
         self.is_processing = False
         self.processing_timer = 0.0
         self.current_crafting_item = None
         self.inventory_changed = False
         self.is_jammed = False
+
+    def _get_timer(self):
+        return self.base_speed / (2 ** (self.level - 1))
 
     def accept_item(self, item_name: str) -> bool:
         """
@@ -445,10 +527,11 @@ class Machine:
     def process_tick(self):
         """Processes a single tick of the machine's core logic."""
         if not self.is_jammed:
-            if self.output.target and self.output_inventory.slots:
+            if self.output_inventory.slots:
                 item_to_push = next(iter(self.output_inventory.slots))
-                if self.output.target.accept_item(item_to_push):
+                if self.output.try_push(item_to_push):
                     self.output_inventory.remove_items({item_to_push: 1})
+                    self.is_jammed = False
                 else:
                     self.is_jammed = True
 
@@ -473,7 +556,7 @@ class Machine:
             self.input_inventory.remove_items(ingredients)
 
             self.current_crafting_item = recipe
-            self.processing_timer = self.base_speed / (2 ** (self.level - 1))
+            self.processing_timer = self._get_timer()
             self.is_processing = True
             self.inventory_changed = True
             self.input.ping()
@@ -539,6 +622,110 @@ class Machine:
             self.level += 1
 
         return flag
+    
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        if direction != self.output_dir:
+            return self.input
+        return None
+    
+
+class Miner:
+    """
+    Extracts raw resources from the environment and outputs them continuously.
+
+    Attributes
+    ----------
+    target_ore : str
+        The identifier of the raw material being generated.
+    base_speed : float
+        The base time in ticks required to mine a single unit.
+    level : int
+        The current upgrade level of the miner.
+    """
+    def __init__(self, x_pos, y_pos, ore, output_dir,
+                 output_component=None):
+        """
+        Initializes the Miner block.
+
+        Parameters
+        ----------
+        x_pos : int or float
+            The x-coordinate of the miner.
+        y_pos : int or float
+            The y-coordinate of the miner.
+        ore : str
+            The name of the item this miner produces.
+        """
+        self.position = Position(x_pos, y_pos)
+        self.output_dir = output_dir
+        self.ore = ore
+        self.level = 1
+        self.base_speed = machine_registry.get_metadata("miner").get("base_speed", 60)
+
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.output.owner = self
+        self.connection = ConnectionComponent(self)
+
+        self.processing_timer = self.base_speed
+        self.is_jammed = False
+    
+    def _get_timer(self):
+        return self.base_speed / (2 ** (self.level - 1))
+
+    def process_tick(self):
+        """Processes a single tick, generating and pushing the target ore."""
+        if self.is_jammed:
+            if self.output.try_push(self.ore):
+                self.processing_timer = self._get_timer()
+                self.is_jammed = False
+            return
+
+        self.processing_timer -= 1
+        
+        if self.processing_timer <= 0:
+            if self.output.try_push(self.ore):
+                self.processing_timer = self._get_timer()
+            else:
+                self.is_jammed = True
+            return
+
+    def upgrade(self, player_inventory):
+        """
+        Upgrades the miner to significantly its generation speed.
+
+        Parameters
+        ----------
+        player_inventory : object
+            The player's main inventory to deduct upgrade costs from.
+
+        Returns
+        -------
+        bool
+            True if the upgrade was successful, False otherwise.
+        """
+        if self.level >= 4:
+            return False
+        
+        metadata = machine_registry.get_metadata("miner")
+        costs = metadata.get("upgrade_costs", [])
+        
+        if self.level - 1 < len(costs):
+            cost = costs[self.level - 1]
+            flag = player_inventory.deduct_item(cost)
+            if flag:
+                self.level += 1
+            return flag
+            
+        return False
+
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        return None
 
 
 class TransportedItem:
@@ -580,7 +767,8 @@ class Conveyor:
     spacing : float
         The minimum progress gap between consecutive items.
     """
-    def __init__(self, x_pos, y_pos, input_dir, output_dir):
+    def __init__(self, x_pos, y_pos, input_dir, output_dir,
+                 input_component=None, output_component=None):
         """
         Initializes the Conveyor.
 
@@ -600,11 +788,16 @@ class Conveyor:
         self.output_dir = output_dir
 
         self.items = []
+        self.pending_items = []
         
         self.speed = 0.1
         self.spacing = 0.25
-        self.input = InputComponent(self, max_sources=1)
-        self.output = OutputComponent(self)
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.input = InputComponent(self, max_sources=1) if input_component is None else input_component
+        self.output.owner = self
+        self.input.owner = self
+        self.connection = ConnectionComponent(self)
+
         self.is_jammed = False
 
     def accept_item(self, item_name: str) -> bool:
@@ -621,17 +814,26 @@ class Conveyor:
         bool
             True if the item was accepted, False if there is not enough spacing.
         """
-        if self.items:
+        last_item = None
+        
+        if self.pending_items:
+            last_item = self.pending_items[-1]
+        elif self.items:
             last_item = self.items[-1]
-            if last_item.progress < self.spacing:
-                return False
+
+        if last_item and last_item.progress < self.spacing:
+            return False
                 
         new_item = TransportedItem(item_name, progress=0.0)
-        self.items.append(new_item)
+        self.pending_items.append(new_item)
         return True
 
     def process_tick(self):
         """Processes the movement of all items on the conveyor for a single tick."""
+        if self.pending_items:
+            self.items.extend(self.pending_items)
+            self.pending_items.clear()
+
         if not self.items:
             self.is_jammed = False
             self.input.ping()
@@ -648,12 +850,20 @@ class Conveyor:
 
         front = self.items[0]
         if front.progress >= 1.0:
-            if self.output.target and self.output.target.accept_item(front.item_name):
+            if self.output.try_push(front.item_name):
                 self.items.pop(0)
-                self.is_jammed = False
                 self.input.ping()
+                self.is_jammed = False
             else:
                 self.is_jammed = True
+
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        if direction == self.input_dir:
+            return self.input
+        return None
         
 
 class Merger:
@@ -665,7 +875,8 @@ class Merger:
     buffer : deque
         A queue temporarily holding items before they are pushed out.
     """
-    def __init__(self, x_pos, y_pos, buffer_size=16):
+    def __init__(self, x_pos, y_pos, output_dir, buffer_size=16, 
+                 input_component=None, output_component=None):
         """
         Initializes the Merger.
 
@@ -679,10 +890,17 @@ class Merger:
             The maximum number of items the merger can hold in its buffer.
         """
         self.position = Position(x_pos, y_pos)
-        self.input = InputComponent(self)
-        self.output = OutputComponent(self)
+        self.output_dir = output_dir
+
+        self.output = OutputComponent(self) if output_component is None else output_component
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.output.owner = self
+        self.input.owner = self
+        self.connection = ConnectionComponent(self)
+
         self.is_jammed = False
         self.buffer = deque(maxlen=buffer_size)
+        self.pending_buffer = deque(maxlen=buffer_size)
 
     def accept_item(self, item_name: str) -> bool:
         """
@@ -698,27 +916,39 @@ class Merger:
         bool
             True if accepted, False if the buffer is full.
         """
-        if len(self.buffer) == self.buffer.maxlen:
+        if len(self.buffer) + len(self.pending_buffer) >= self.buffer.maxlen:
             return False
-        self.buffer.append(item_name)
-        if len(self.buffer) == self.buffer.maxlen:
+        self.pending_buffer.append(item_name)
+        if len(self.buffer) + len(self.pending_buffer) >= self.buffer.maxlen:
             for source in self.input.sources:
                 source.is_jammed = True
         return True
 
     def process_tick(self):
         """Processes a single tick, pushing buffered items to the target output."""
+        while self.pending_buffer:
+            self.buffer.append(self.pending_buffer.popleft())
+
         if not self.buffer or not self.output.target:
             return
 
-        if self.output.target.accept_item(self.buffer[0]):
+        if self.output.try_push(self.buffer[0]):
             self.buffer.popleft()
             self.input.ping()
+            self.is_jammed = False
         else:
             self.is_jammed = True
+        
+    def get_outbound_ports(self):
+        return {self.output_dir: self.output}
+    
+    def get_inbound_port(self, direction):
+        if direction != self.output_dir:
+            return self.input
+        return None
 
 
-class Splitter:
+class Router:
     """
     Distributes an incoming stream of items across multiple outputs based on weights.
 
@@ -731,7 +961,8 @@ class Splitter:
     weights : list of int
         Ratios dictating the distribution of items to each output.
     """
-    def __init__(self, x_pos, y_pos, output_dirs: list[str], weights=None):
+    def __init__(self, x_pos, y_pos, input_dir, mode="split", buffer_size=16,
+                 input_component=None, output_component=None):
         """
         Initializes the Splitter.
 
@@ -741,23 +972,35 @@ class Splitter:
             The x-coordinate of the splitter.
         y_pos : int or float
             The y-coordinate of the splitter.
-        output_dirs : list of str
-            Directions corresponding to the output slots.
         weights : list of int, optional
             Ratios determining the distribution weight per output.
+        buffer_size : int, optional
+            The maximum number of items the merger can hold in its buffer.
         """
         self.position = Position(x_pos, y_pos)
+        self.mode = mode
 
-        self.input = InputComponent(self, max_sources=1)
-        self.outputs = [OutputComponent(self) for _ in range(3)]
+        self.outputs = [OutputComponent(self) for _ in range(3)] if output_component is None else output_component
+        self.input = InputComponent(self, max_sources=1) if input_component is None else input_component
+        for out_comp in self.outputs:
+            out_comp.owner = self
+        self.input.owner = self
+        self.connection = ConnectionComponent(self)
 
-        self.output_dirs = output_dirs
-        self.weights = weights if weights is not None else [1, 1, 1]
+        self.input_dir = input_dir
+        self.output_dirs = [d for d in ["N", "E", "S", "W"] if d != self.input_dir]
+
+        if self.mode == "split":
+            self.config = [1, 1, 1]
+            self.current_output = 0
+            self.current_count = 0
+        elif self.mode == "filter":
+            self.config = [-1, -1, 0]
+
         self.is_jammed = False
-        self.buffer = deque(maxlen=16)
+        self.buffer = deque(maxlen=buffer_size)
+        self.pending_buffer = deque(maxlen=buffer_size)
 
-        self.current_output = 0
-        self.current_count = 0
 
     def bind_output(self, target, slot: int):
         """
@@ -770,6 +1013,7 @@ class Splitter:
         slot : int
             The output slot index (0-2).
         """
+        
         self.outputs[slot].bind(target)
 
     def unbind_output(self, slot: int):
@@ -797,12 +1041,13 @@ class Splitter:
         bool
             True if accepted, False if the buffer is full.
         """
-        if len(self.buffer) == self.buffer.maxlen:
+        if len(self.buffer) + len(self.pending_buffer) >= self.buffer.maxlen:
             return False
-        self.buffer.append(item_name)
+        
+        self.pending_buffer.append(item_name)
         return True
-
-    def _next_valid_output(self):
+    
+    def _get_split_slot(self):
         """
         Finds the next available valid output slot based on weights.
 
@@ -813,147 +1058,84 @@ class Splitter:
         """
         for i in range(3):
             slot = (self.current_output + i) % 3
-            if self.weights[slot] > 0 and self.outputs[slot].target:
+            if self.config[slot] > 0 and self.outputs[slot].target:
                 return slot
         return None
-
-    def process_tick(self):
-        """Processes a single tick, routing items to the valid outputs."""
-        if not self.buffer:
-            self.is_jammed = False
-            self.input.ping()
-            return
-
-        slot = self._next_valid_output()
-        if slot is None:
-            return
-
-        target = self.outputs[slot].target
-        if target.accept_item(self.buffer[0]):
-            self.buffer.popleft()
-            self.current_count += 1
-            if self.current_count >= self.weights[slot]:
-                self.current_count = 0
-                self.current_output = (self.current_output + 1) % 3
-            self.is_jammed = False
-            self.input.ping()
-        else:
-            self.is_jammed = True
-
-
-class Filter:
-    """
-    Routes items to specific output targets based on item names.
-
-    Attributes
-    ----------
-    filters : dict
-        A mapping of item names to output slot indices.
-    """
-    def __init__(self, x_pos, y_pos, output_dirs, fallback_dir, filters=None):
+    
+    def _get_filter_slot(self, item_name):
         """
-        Initializes the Filter.
-
-        Parameters
-        ----------
-        x_pos : int or float
-            The x-coordinate of the filter.
-        y_pos : int or float
-            The y-coordinate of the filter.
-        output_dirs : list of str
-            Directions corresponding to the filtered output slots.
-        fallback_dir : str
-            The direction for items that do not match any filter.
-        filters : dict, optional
-            A dictionary mapping item names to an output slot integer.
-        """
-        self.position = Position(x_pos, y_pos)
-        self.output_dirs = output_dirs
-        self.fallback_dir = fallback_dir
-
-        self.input = InputComponent(self, max_sources=1)
-        self.outputs = [OutputComponent(self), OutputComponent(self)]
-        self.fallback = OutputComponent(self)
-
-        self.filters = filters if filters is not None else {}
-        self.is_jammed = False
-        self.buffer = deque(maxlen=16)
-
-    def bind_output(self, target, slot):
-        """
-        Binds a specific filtered output to a target.
-
-        Parameters
-        ----------
-        target : object
-            The target entity.
-        slot : int
-            The slot index to bind.
-        """
-        self.outputs[slot].bind(target)
-
-    def unbind_output(self, slot):
-        """
-        Unbinds a specific filtered output.
-
-        Parameters
-        ----------
-        slot : int
-            The slot index to unbind.
-        """
-        self.outputs[slot].unbind()
-
-    def bind_fallback(self, target):
-        """
-        Binds the fallback output to a target.
-
-        Parameters
-        ----------
-        target : object
-            The target entity for unmatched items.
-        """
-        self.fallback.bind(target)
-
-    def unbind_fallback(self):
-        """Unbinds the fallback output."""
-        self.fallback.unbind()
-
-    def accept_item(self, item_name):
-        """
-        Accepts an item into the filter buffer.
+        Finds the valid output slot based on item_name.
 
         Parameters
         ----------
         item_name : str
-            The name of the incoming item.
+            The name of the outputting item.
 
         Returns
         -------
-        bool
-            True if accepted, False if the buffer is full.
+        int or None
+            The index of the next valid output slot, or None if none are available.
         """
-        if len(self.buffer) == self.buffer.maxlen:
+        if item_name in self.config:
+            return self.config.index(item_name)
+        return self.config.index(0)
+    
+    def set_config(self, config):
+        if len(config) != 3:
             return False
-        self.buffer.append(item_name)
-        return True
+        if self.mode == 'split':
+            if any(i > 0 for i in config):
+                self.config = config
+                return True
+            return False
+        if self.mode == 'filter':
+            if config.count(0) == 1:
+                self.config = config
+                return True
+            return False
 
     def process_tick(self):
-        """Processes a single tick, routing the front item based on the filter list."""
+        """Processes a single tick, routing items to the valid outputs."""
+        while self.pending_buffer:
+            self.buffer.append(self.pending_buffer.popleft())
+            
         if not self.buffer:
             self.is_jammed = False
             self.input.ping()
             return
 
         item_name = self.buffer[0]
-        slot = self.filters.get(item_name)
-        out_component = self.outputs[slot] if slot is not None else self.fallback
-    
-        if out_component.target and out_component.target.accept_item(item_name):
+
+        if self.mode == "split":
+            slot = self._get_split_slot()
+            if slot is None:
+                return
+        else:
+            slot = self._get_filter_slot(item_name)
+
+        out_component = self.outputs[slot]  
+
+        if out_component.try_push(item_name):
+
+            if self.mode == "split":
+                self.current_count += 1
+                if self.current_count >= self.config[slot]:
+                    self.current_count = 0
+                    self.current_output = (self.current_output + 1) % 3
+
             self.buffer.popleft()
             self.is_jammed = False
             self.input.ping()
         else:
             self.is_jammed = True
+
+    def get_outbound_ports(self):
+        return dict(zip(self.output_dirs, self.outputs))
+        
+    def get_inbound_port(self, from_dir):
+        if from_dir == self.input_dir:
+            return self.input
+        return None
 
 
 class Seller:
@@ -967,7 +1149,8 @@ class Seller:
     input_buffer : list
         Temporarily stores incoming items before they are sold.
     """
-    def __init__(self, x_pos, y_pos, economy_manager):
+    def __init__(self, x_pos, y_pos, economy_manager,
+                 input_component=None):
         """
         Initializes the Seller block.
 
@@ -982,7 +1165,9 @@ class Seller:
         """
         self.position = Position(x_pos, y_pos)
         self.economy = economy_manager
-        self.input = InputComponent(self)
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.input.owner = self
+        self.connection = ConnectionComponent(self)
         self.input_buffer = []
 
     def accept_item(self, item_name):
@@ -1015,6 +1200,12 @@ class Seller:
         self.economy.add_money(total)
         self.input_buffer.clear()
 
+    def get_outbound_ports(self):
+        return {}
+        
+    def get_inbound_port(self, from_dir):
+        return self.input
+
 
 class CentralStorage:
     """
@@ -1027,7 +1218,8 @@ class CentralStorage:
     input_buffer : list
         Temporarily stores incoming items before moving them to storage.
     """
-    def __init__(self, x_pos, y_pos, player_inventory):
+    def __init__(self, x_pos, y_pos, player_inventory,
+                 input_component=None):
         """
         Initializes the CentralStorage.
 
@@ -1042,7 +1234,9 @@ class CentralStorage:
         """
         self.position = Position(x_pos, y_pos)
         self.inventory = player_inventory
-        self.input = InputComponent(self)
+        self.input = InputComponent(self) if input_component is None else input_component
+        self.input.owner = self
+        self.connection = ConnectionComponent(self)
         self.input_buffer = []
 
     def accept_item(self, item_name):
@@ -1069,3 +1263,9 @@ class CentralStorage:
         for item in self.input_buffer:
             self.inventory.add_item(item, 1)
         self.input_buffer.clear()
+
+    def get_outbound_ports(self):
+        return {}
+        
+    def get_inbound_port(self, from_dir):
+        return self.input
