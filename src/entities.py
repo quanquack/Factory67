@@ -631,6 +631,32 @@ class Machine:
             return self.input
         return None
     
+    def to_dict(self):
+        return {
+            "class_name": "Machine",
+            "type": self.machine_type,
+            "x": self.position.x,
+            "y": self.position.y,
+            "recipe": self.recipe_manager.selected_recipe,
+            "output_dir": self.output_dir,
+            "level": self.level
+        }
+    
+    @classmethod
+    def from_dict(cls, data, **kwargs):
+        new_block = cls(
+            x_pos=data["x"],
+            y_pos=data["y"],
+            output_dir=data["output_dir"],
+            machine_type=data["type"]
+        )
+
+        new_block.level = data.get("level", 1)
+        if data.get("recipe"):
+            new_block.set_machine_recipe(data.get("recipe"))
+
+        return new_block
+    
 
 class Miner:
     """
@@ -726,6 +752,32 @@ class Miner:
     
     def get_inbound_port(self, direction):
         return None
+    
+    def to_dict(self):
+        return {
+            "class_name": "Miner",
+            "x": self.position.x,
+            "y": self.position.y,
+            "output_dir": self.output_dir,
+            "level": self.level
+        }
+    
+    @classmethod
+    def from_dict(cls, data, **kwargs):
+        game_map = kwargs.get("game_map")
+
+        target_ore = "copper" #PLACEHOLDER
+        if game_map:
+            pass
+
+        new_block = cls(
+            x_pos=data["x"],
+            y_pos=data["y"],
+            ore=target_ore,
+            output_dir=data["output_dir"]
+        )
+        new_block.level = data.get("level", 1)
+        return new_block
 
 
 class TransportedItem:
@@ -864,6 +916,26 @@ class Conveyor:
         if direction == self.input_dir:
             return self.input
         return None
+    
+    def to_dict(self):
+        return {
+            "class_name": "Conveyor",
+            "x": self.position.x,
+            "y": self.position.y,
+            "input_dir": self.input_dir,
+            "output_dir": self.output_dir
+        }
+    
+    @classmethod
+    def from_dict(cls, data, **kwargs):
+        new_block = cls(
+            x_pos=data["x"],
+            y_pos=data["y"],
+            input_dir=data["input_dir"],
+            output_dir=data["output_dir"]
+        )
+
+        return new_block
         
 
 class Merger:
@@ -946,6 +1018,25 @@ class Merger:
         if direction != self.output_dir:
             return self.input
         return None
+    
+    def to_dict(self):
+        return {
+            "class_name": "Merger",
+            "x": self.position.x,
+            "y": self.position.y,
+            "output_dir": self.output_dir
+        }
+    
+    @classmethod
+    
+    def from_dict(cls, data, **kwargs):
+        new_block = cls(
+            x_pos=data["x"],
+            y_pos=data["y"],
+            output_dir=data["output_dir"]
+        )
+
+        return new_block
 
 
 class Router:
@@ -1137,6 +1228,27 @@ class Router:
             return self.input
         return None
 
+    def to_dict(self):
+        return {
+            "class_name": "Router",
+            "mode": self.mode,
+            "x": self.position.x,
+            "y": self.position.y,
+            "config": self.config,
+            "input_dir": self.input_dir
+        }
+    
+    @classmethod
+    def from_dict(cls, data, **kwargs):
+        new_block = cls(
+            x_pos=data["x"],
+            y_pos=data["y"],
+            mode=data["mode"],
+            input_dir=data["input_dir"]
+        )
+        new_block.set_config(data["config"])
+        return new_block
+
 
 class Seller:
     """
@@ -1205,6 +1317,24 @@ class Seller:
         
     def get_inbound_port(self, from_dir):
         return self.input
+    
+    def to_dict(self):
+        return {
+            "class_name": "Seller",
+            "x": self.position.x,
+            "y": self.position.y,
+        }
+    
+    @classmethod
+    def from_dict(cls, data, **kwargs):
+        economy_manager = kwargs.get("economy_manager")
+        new_block = cls(
+            x_pos=data["x"],
+            y_pos=data["y"],
+            economy_manager=economy_manager
+        )
+
+        return new_block
 
 
 class CentralStorage:
@@ -1269,3 +1399,21 @@ class CentralStorage:
         
     def get_inbound_port(self, from_dir):
         return self.input
+    
+    def to_dict(self):
+        return {
+            "class_name": "CentralStorage",
+            "x": self.position.x,
+            "y": self.position.y,
+        }
+    
+    @classmethod
+    def from_dict(cls, data, **kwargs):
+        player_inventory = kwargs.get("player_inventory")
+        new_block = cls(
+            x_pos=data["x"],
+            y_pos=data["y"],
+            player_inventory=player_inventory
+        )
+
+        return new_block
