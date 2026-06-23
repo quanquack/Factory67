@@ -446,7 +446,6 @@ class ConnectionComponent:
     def on_break(self, game_map):
         for out_comp in self.owner.get_outbound_ports().values():
             out_comp.unbind()
-        game_map.grid.pop(self.owner.position.get_coord(), None)
         self._ping_adj(game_map)
 
 
@@ -766,9 +765,9 @@ class Miner:
     def from_dict(cls, data, **kwargs):
         game_map = kwargs.get("game_map")
 
-        target_ore = "copper" #PLACEHOLDER
+        target_ore = "copper"
         if game_map:
-            pass
+            target_ore = game_map.get_ore_at(data["x"], data["y"])
 
         new_block = cls(
             x_pos=data["x"],
