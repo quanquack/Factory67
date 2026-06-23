@@ -1,5 +1,5 @@
 from collections import deque
-from registry import machine_registry, item_registry
+from src.registry import machine_registry, item_registry
 
 class Position:
     """
