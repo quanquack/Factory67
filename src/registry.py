@@ -168,6 +168,21 @@ class ItemRegistry:
         """
         return self.item_data.get(item_name, {}).get("display_name", item_name)
 
+class OreRegistry:
+    def __init__(self):
+        self.ore_data = {}
+
+    def load_from_file(self, file_path: str):
+        with open(file_path, 'r', encoding='utf-8') as f:
+            self.ore_data = json.load(f)
+
+    def get_all_ores(self):
+        return self.ore_data
+
+    def get_color(self, ore_name: str):
+        color_list = self.ore_data.get(ore_name, {}).get("color", [255, 0, 255])
+        return tuple(color_list)
 
 machine_registry = MachineRegistry()
 item_registry = ItemRegistry()
+ore_registry = OreRegistry()
