@@ -1,5 +1,23 @@
 from collections import deque
+from abc import ABC, abstractmethod
 from src.registry import machine_registry, item_registry
+
+BLOCK_REGISTRY = {}
+
+def register_block(tool_name):
+    def wrapper(cls):
+        BLOCK_REGISTRY[tool_name] = cls
+        return cls
+    return wrapper
+
+def spawn_entity(tool, x, y, context):
+    block_class = BLOCK_REGISTRY.get(tool, Machine)
+    
+    if hasattr(block_class, 'build'):
+        return block_class.build(x, y, context)
+        
+    return None
+
 
 class Position:
     """
@@ -449,7 +467,58 @@ class ConnectionComponent:
         self._ping_adj(game_map)
 
 
-class Machine:
+class TransportedItem:
+    """
+    Represents an item currently being transported on a conveyor.
+
+    Attributes
+    ----------
+    item_name : str
+        The name of the item.
+    progress : float
+        The progress of the item along the conveyor (between 0.0 and 1.0).
+    """
+    def __init__(self, item_name, progress=0.0):
+        """
+        Initializes the TransportedItem.
+
+        Parameters
+        ----------
+        item_name : str
+            The name of the item being transported.
+        progress : float, optional
+            The initial progress value.
+        """
+        self.item_name = item_name
+        self.progress = progress
+
+
+class BaseBlock(ABC):
+    @abstractmethod
+    def process_tick(self): ...
+
+    @abstractmethod
+    def get_outbound_ports(self) -> dict: ...
+
+    @abstractmethod
+    def get_inbound_port(self, direction: str): ...
+
+    @abstractmethod
+    def to_dict(self) -> dict: ...
+
+    @classmethod
+    @abstractmethod
+    def from_dict(cls, data, **kwargs): ...
+
+    @abstractmethod
+    def get_asset_name(self) -> str: ...
+
+
+@register_block('smelter')
+@register_block('bending_machine')
+@register_block('wire_drawer')
+@register_block('assembler')
+class Machine(BaseBlock):
     """
     Base class for functional machines capable of processing items.
 
@@ -656,8 +725,16 @@ class Machine:
 
         return new_block
     
+    def get_asset_name(self):
+        return self.machine_type
+    
+    @classmethod
+    def build(cls, x, y, ctx):
+        return cls(x_pos=x, y_pos=y, output_dir=ctx['out_dir'], machine_type=ctx['tool'])
+    
 
-class Miner:
+@register_block('miner')
+class Miner(BaseBlock):
     """
     Extracts raw resources from the environment and outputs them continuously.
 
@@ -777,35 +854,20 @@ class Miner:
         )
         new_block.level = data.get("level", 1)
         return new_block
+    
+    def get_asset_name(self):
+        return "miner"
 
+    @classmethod
+    def build(cls, x, y, ctx):
+        ore = ctx['game_map'].get_ore_at(x, y)
+        if not ore: 
+            return None
+        return cls(x_pos=x, y_pos=y, ore=ore, output_dir=ctx['out_dir'])
+    
 
-class TransportedItem:
-    """
-    Represents an item currently being transported on a conveyor.
-
-    Attributes
-    ----------
-    item_name : str
-        The name of the item.
-    progress : float
-        The progress of the item along the conveyor (between 0.0 and 1.0).
-    """
-    def __init__(self, item_name, progress=0.0):
-        """
-        Initializes the TransportedItem.
-
-        Parameters
-        ----------
-        item_name : str
-            The name of the item being transported.
-        progress : float, optional
-            The initial progress value.
-        """
-        self.item_name = item_name
-        self.progress = progress
-
-
-class Conveyor:
+@register_block('conveyor')
+class Conveyor(BaseBlock):
     """
     Transports items between different blocks on the map.
 
@@ -842,7 +904,7 @@ class Conveyor:
         self.pending_items = []
         
         self.speed = 0.1
-        self.spacing = 0.25
+        self.spacing = 0.5
         self.output = OutputComponent(self) if output_component is None else output_component
         self.input = InputComponent(self, max_sources=1) if input_component is None else input_component
         self.output.owner = self
@@ -935,9 +997,17 @@ class Conveyor:
         )
 
         return new_block
+    
+    def get_asset_name(self):
+        return f"conveyor_{self.input_dir}_{self.output_dir}"
+    
+    @classmethod
+    def build(cls, x, y, ctx):
+        return cls(x_pos=x, y_pos=y, input_dir=ctx['in_dir'], output_dir=ctx['out_dir'])
         
 
-class Merger:
+@register_block('merger')
+class Merger(BaseBlock):
     """
     Merges items from multiple input sources into a single output stream.
 
@@ -1027,7 +1097,6 @@ class Merger:
         }
     
     @classmethod
-    
     def from_dict(cls, data, **kwargs):
         new_block = cls(
             x_pos=data["x"],
@@ -1036,9 +1105,18 @@ class Merger:
         )
 
         return new_block
+    
+    def get_asset_name(self):
+        return "merger"
+    
+    @classmethod
+    def build(cls, x, y, ctx):
+        return cls(x_pos=x, y_pos=y, output_dir=ctx['out_dir'])
 
 
-class Router:
+@register_block('splitter')
+@register_block('filter')
+class Router(BaseBlock):
     """
     Distributes an incoming stream of items across multiple outputs based on weights.
 
@@ -1080,7 +1158,7 @@ class Router:
         self.input_dir = input_dir
         self.output_dirs = [d for d in ["N", "E", "S", "W"] if d != self.input_dir]
 
-        if self.mode == "split":
+        if self.mode == "splitter":
             self.config = [1, 1, 1]
             self.current_output = 0
             self.current_count = 0
@@ -1173,7 +1251,7 @@ class Router:
     def set_config(self, config):
         if len(config) != 3:
             return False
-        if self.mode == 'split':
+        if self.mode == 'splitter':
             if any(i > 0 for i in config):
                 self.config = config
                 return True
@@ -1196,7 +1274,7 @@ class Router:
 
         item_name = self.buffer[0]
 
-        if self.mode == "split":
+        if self.mode == "splitter":
             slot = self._get_split_slot()
             if slot is None:
                 return
@@ -1207,7 +1285,7 @@ class Router:
 
         if out_component.try_push(item_name):
 
-            if self.mode == "split":
+            if self.mode == "splitter":
                 self.current_count += 1
                 if self.current_count >= self.config[slot]:
                     self.current_count = 0
@@ -1247,9 +1325,18 @@ class Router:
         )
         new_block.set_config(data["config"])
         return new_block
+    
+    def get_asset_name(self):
+        return self.mode
+    
+    @classmethod
+    def build(cls, x, y, ctx):
+        target_mode = ctx.get('tool', 'splitter')
+        return cls(x_pos=x, y_pos=y, input_dir=ctx['in_dir'], mode=target_mode)
 
 
-class Seller:
+@register_block('seller')
+class Seller(BaseBlock):
     """
     Consumes items and adds corresponding funds to the player economy.
 
@@ -1280,6 +1367,8 @@ class Seller:
         self.input.owner = self
         self.connection = ConnectionComponent(self)
         self.input_buffer = []
+        self.height = 4
+        self.width = 4
 
     def accept_item(self, item_name):
         """
@@ -1335,8 +1424,17 @@ class Seller:
 
         return new_block
 
+    def get_asset_name(self):
+        return "seller"
+    
 
-class CentralStorage:
+    @classmethod
+    def build(cls, x, y, ctx):
+        return cls(x_pos=x, y_pos=y, economy_manager=ctx.get('economy'))
+
+
+@register_block('storage')
+class CentralStorage(BaseBlock):
     """
     Accepts items and places them directly into the player's main inventory.
 
@@ -1367,6 +1465,8 @@ class CentralStorage:
         self.input.owner = self
         self.connection = ConnectionComponent(self)
         self.input_buffer = []
+        self.height = 4
+        self.width = 4
 
     def accept_item(self, item_name):
         """
@@ -1416,3 +1516,10 @@ class CentralStorage:
         )
 
         return new_block
+    
+    def get_asset_name(self):
+        return "storage"
+    
+    @classmethod
+    def build(cls, x, y, ctx):
+        return cls(x_pos=x, y_pos=y, player_inventory=ctx.get('inventory'))
