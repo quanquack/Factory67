@@ -57,7 +57,7 @@ class AssetManager:
         
         try:
             if not os.path.exists(filepath):
-                raise FileNotFoundError(f"File {filepath} không tồn tại!")
+                raise FileNotFoundError(f"File {filepath} not exist")
 
             image = pygame.image.load(filepath).convert_alpha()
             

@@ -1,0 +1,12 @@
+{
+    "metadata": {
+        "base_speed": 90,
+        "require_selection": false,
+        "upgrade_costs": [
+            {"iron_plate": 3},
+            {"iron_plate": 6, "copper_wire": 4},
+            {"iron_plate": 12, "copper_wire": 8, "gold_plate": 2}
+        ]
+    },
+    "recipes": {}
+}

@@ -1,0 +1,5 @@
+{
+    "circuit": {"display_name": "Circuit", "price": 60, "image": "assets/circuit.png"},
+    "motor": {"display_name": "Motor", "price": 80, "image": "assets/motor.png"},
+    "battery": {"display_name": "Battery", "price": 75, "image": "assets/battery.png"}
+}

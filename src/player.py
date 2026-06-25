@@ -52,6 +52,7 @@ class Inventory:
     """
     def __init__(self):
         self.inventory = {}
+        self.unlocked_recipes = []
 
     def add_item(self, item_type: str, amount: int):
         """
@@ -96,6 +97,16 @@ class Inventory:
             
         return True
     
+    def to_dict(self):
+        return {
+            "items": self.inventory,
+            "unlocked_recipes": self.unlocked_recipes
+        }
+    
+    def from_dict(self, data):
+        self.inventory = data.get("items", {})
+        self.unlocked_recipes = data.get("unlocked_recipes", [])
+
 class RecipeManager:
     """
     Handles the availability and unlocking of crafting formulas.

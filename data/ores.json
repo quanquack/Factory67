@@ -1,0 +1,34 @@
+{
+    "copper": {
+        "scale": 0.02, 
+        "threshold": 0.45, 
+        "seed_offset": 0,
+        "color": [184, 115, 51],
+        "products": ["plate", "wire", "liquid"],
+        "base_price": 2
+    },
+    "iron": {
+        "scale": 0.03, 
+        "threshold": 0.45, 
+        "seed_offset": 1000,
+        "color": [161, 157, 148],
+        "products": ["plate", "wire", "liquid"],
+        "base_price": 2
+    },
+    "gold": {
+        "scale": 0.03, 
+        "threshold": 0.45, 
+        "seed_offset": 2000,
+        "color": [255, 215, 0],
+        "products": ["plate", "wire", "liquid"],
+        "base_price": 5
+    },
+    "aluminum": {
+        "scale": 0.03, 
+        "threshold": 0.45, 
+        "seed_offset": 3000,
+        "color": [210, 217, 224],
+        "products": ["plate", "wire", "liquid"],
+        "base_price": 2
+    }
+}
