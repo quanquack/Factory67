@@ -1,0 +1,16 @@
+{
+    "metadata": {
+        "base_speed": 160,
+        "require_selection": true,
+        "upgrade_costs": [
+            {"iron_plate": 5, "copper_wire": 3},
+            {"iron_plate": 10, "copper_wire": 6, "gold_plate": 2},
+            {"iron_plate": 20, "copper_wire": 12, "gold_plate": 5}
+        ]
+    },
+    "recipes": {
+        "circuit": {"copper_wire": 3, "iron_plate": 1},
+        "motor": {"iron_wire": 4, "iron_plate": 2},
+        "battery": {"copper_wire": 2, "gold_plate": 1}
+    }
+}

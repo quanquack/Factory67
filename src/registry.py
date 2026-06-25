@@ -72,6 +72,45 @@ class MachineRegistry:
             The metadata configuration, or an empty dictionary if not found.
         """
         return self.machine_data.get(machine_type, {}).get("metadata", {})
+    
+    def generate_ore_recipes(self, ore_configs: dict):
+        product_templates = {
+            "plate":  {
+                "machine": "bending_machine",
+                "output": "{ore}_plate",
+                "ingredients": {"{ore}": 2}
+            },
+            "wire": {
+                "machine": "wire_drawer",
+                "output": "{ore}_wire",
+                "ingredients": {"{ore}": 1}
+            },
+            "liquid": {
+                "machine": "smelter",
+                "output": "{ore}_liquid",
+                "ingredients": {"{ore}": 1}
+            }
+        }   
+
+        for ore_name, ore_config in ore_configs.items():
+            for product in ore_config.get("products", []):
+                if product not in product_templates:
+                    continue
+
+                template = product_templates[product]
+                machine = template["machine"]
+
+                if machine not in self.machine_data:
+                    continue
+
+                output_name = template["output"].replace("{ore}", ore_name)
+                ingredients = {
+                    k.replace("{ore}", ore_name): v
+                    for k, v in template["ingredients"].items()
+                }
+
+                self.machine_data[machine].setdefault("recipes", {})
+                self.machine_data[machine]["recipes"][output_name] = ingredients
 
 
 class ItemRegistry:
@@ -167,6 +206,31 @@ class ItemRegistry:
             The display name, or the internal item_name if no display name is defined.
         """
         return self.item_data.get(item_name, {}).get("display_name", item_name)
+    
+    def generate_ore_items(self, ore_configs: dict):
+        product_multipliers = {
+            "plate":  4,
+            "wire":   6,
+            "liquid": 5
+        }
+
+        for ore_name, config in ore_configs.items():
+            base_price = config.get("base_price", 1)
+
+            self.item_data[ore_name] = {
+                "display_name": f"{ore_name.capitalize()} Ore",
+                "price": base_price,
+                "image": f"assets/{ore_name}.png"
+            }
+
+            for product in config.get("products", []):
+                item_name = f"{ore_name}_{product}"
+                multiplier = product_multipliers.get(product, 1)
+                self.item_data[item_name] = {
+                    "display_name": f"{ore_name.capitalize()} {product.capitalize()}",
+                    "price": base_price * multiplier,
+                    "image": f"assets/{item_name}.png"
+                }
 
 class OreRegistry:
     def __init__(self):

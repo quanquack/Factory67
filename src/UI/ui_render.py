@@ -2,6 +2,8 @@ import pygame
 from src.entities import Miner, Conveyor, Machine, Seller
 from src.registry import ore_registry
 
+OPPOSITE_DIRS = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
+
 class Camera:
     """
     Manages the player's viewport, handling panning and zooming operations.
@@ -218,7 +220,7 @@ class InputHandler:
         elif button == 3:
             self.is_destroying = False
             self.last_interacted_grid = None
-        
+
     def handle_mouse_motion(self, x, y):
         """
         Handle mouse movement for panning and hover tracking.
@@ -240,28 +242,48 @@ class InputHandler:
         if (self.is_building or self.is_destroying) and self.hovered_grid != self.last_interacted_grid:
             
             if self.is_building and self.selected_tool == 'conveyor' and self.last_interacted_grid:
-                dx = grid_x - self.last_interacted_grid[0]
-                dy = grid_y - self.last_interacted_grid[1]
-                
-                if abs(dx) > abs(dy):
-                    drag_dir = 'E' if dx > 0 else 'W'
-                else:
-                    drag_dir = 'N' if dy > 0 else 'S'
-                
-                prev_block = self.game_manager.game_map.get_block_at(*self.last_interacted_grid)
-                if prev_block and type(prev_block).__name__ == 'Conveyor':
-                    prev_block.output_dir = drag_dir
-                    prev_block.connection.update_outbound(self.game_manager.game_map)
+                while self.last_interacted_grid != self.hovered_grid:
+                    prev_x, prev_y = self.last_interacted_grid
+                    target_x, target_y = self.hovered_grid
+                    
+                    dx = target_x - prev_x
+                    dy = target_y - prev_y
+                    
+                    if dx == 0 and dy == 0:
+                        break
+                        
+                    step_x, step_y = prev_x, prev_y
+                    if abs(dx) > abs(dy):
+                        step_x += 1 if dx > 0 else -1
+                    else:
+                        step_y += 1 if dy > 0 else -1
+                        
+                    drag_dx = step_x - prev_x
+                    drag_dy = step_y - prev_y
+                    drag_dir = 'E' if drag_dx > 0 else ('W' if drag_dx < 0 else ('S' if drag_dy > 0 else 'N'))
+                    
+                    prev_block = self.game_manager.game_map.get_block_at(prev_x, prev_y)
+                    if prev_block and type(prev_block).__name__ == 'Conveyor':
+                        prev_block.output_dir = drag_dir
+                        if hasattr(prev_block, 'connection'):
+                            prev_block.connection.update_outbound(self.game_manager.game_map)
 
-                opposite_dirs = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
-                self.custom_in_dir = opposite_dirs[drag_dir]
-                self.current_direction = drag_dir
+                    if self.game_manager.game_map.get_block_at(step_x, step_y) is not None:
+                        break
 
+                    drag_in_dir = OPPOSITE_DIRS[drag_dir]
+
+                    self._handle_build_destroy(step_x, step_y, 1, override_in_dir=drag_in_dir, override_out_dir=drag_dir)
+                    
+                    self.last_interacted_grid = (step_x, step_y)
+                
+                return
+            
             button_action = 1 if self.is_building else 3
             self._handle_build_destroy(grid_x, grid_y, button_action)
             self.last_interacted_grid = self.hovered_grid
 
-    def _handle_build_destroy(self, grid_x, grid_y, button):
+    def _handle_build_destroy(self, grid_x, grid_y, button, override_in_dir=None, override_out_dir=None):
         """
         Handle building or destroying entities at a given grid position.
 
@@ -272,13 +294,13 @@ class InputHandler:
         """
         if button == 1:
             if self.game_manager.game_map.get_block_at(grid_x, grid_y) is None:
-                new_block = self._create_entity(grid_x, grid_y)
+                new_block = self._create_entity(grid_x, grid_y, override_in_dir, override_out_dir)
                 if new_block:
                     self.game_manager.game_map.place_block(new_block)
         elif button == 3:
             self.game_manager.game_map.remove_block(grid_x, grid_y)
 
-    def _create_entity(self, x, y):
+    def _create_entity(self, x, y, override_in_dir=None, override_out_dir=None):
         """
         Create a new game entity based on the currently selected tool.
 
@@ -289,16 +311,21 @@ class InputHandler:
         Returns:
             object or None: The created entity instance, or None if no valid tool is selected.
         """
-        opposite_dirs = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
-        in_dir = opposite_dirs[self.current_direction]
-        final_in_dir = self.custom_in_dir if self.custom_in_dir else in_dir
+        out_dir = override_out_dir if override_out_dir else self.current_direction
+        
+        if override_in_dir:
+            final_in_dir = override_in_dir
+        elif self.custom_in_dir:
+            final_in_dir = self.custom_in_dir
+        else:
+            final_in_dir = OPPOSITE_DIRS[out_dir]
 
         context = {
             'game_map': self.game_manager.game_map,
             'economy': self.game_manager.economy,
             'inventory': self.game_manager.inventory,
             'in_dir': final_in_dir,
-            'out_dir': self.current_direction,
+            'out_dir': out_dir,
             'tool': self.selected_tool
         }
         
@@ -332,6 +359,7 @@ class UIRenderer:
         self.bg_color = (30, 32, 40) 
         self.font = pygame.font.SysFont("Arial", 16, bold=True)
         self.chunk_surfaces = {}
+        self.direction_text = {'N': '↑', 'S': '↓', 'E': '→', 'W': '←'}
 
     def _get_chunk_surface(self, cx, cy):
         if (cx, cy) in self.chunk_surfaces:
@@ -496,8 +524,8 @@ class UIRenderer:
 
         # Direction offsets relative to tile center
         dir_offsets = {
-            "N": (0, current_size / 2),
-            "S": (0, -current_size / 2),
+            "N": (0, -current_size / 2),
+            "S": (0, current_size / 2),
             "E": (current_size / 2, 0),
             "W": (-current_size / 2, 0)
         }
@@ -535,10 +563,23 @@ class UIRenderer:
         This provides visual feedback for placement before committing.
         """
         grid_x, grid_y = self.input_handler.hovered_grid
-        if self.game_manager.game_map.get_block_at(grid_x, grid_y) is None:
-            temp_block = self.input_handler._create_entity(grid_x, grid_y)
-            if temp_block:
-                self._draw_entity(temp_block, grid_x, grid_y, is_ghost=True)
+        mode = self.input_handler.interaction_mode
+        
+        if mode == 'BUILD':
+            if self.game_manager.game_map.get_block_at(grid_x, grid_y) is None:
+                temp_block = self.input_handler._create_entity(grid_x, grid_y)
+                if temp_block:
+                    self._draw_entity(temp_block, grid_x, grid_y, is_ghost=True)
+                    
+        elif mode == 'PAN':
+            pixel_x, pixel_y = self.camera.world_to_screen(grid_x, grid_y)
+            current_size = self.camera.actual_tile_size
+            
+            highlight = pygame.Surface((current_size, current_size), pygame.SRCALPHA)
+            highlight.fill((255, 255, 255, 30)) 
+            pygame.draw.rect(highlight, (255, 255, 255, 100), (0, 0, current_size, current_size), 1)
+            
+            self.screen.blit(highlight, (pixel_x, pixel_y))
 
     def _draw_hud(self):
         """
@@ -549,7 +590,7 @@ class UIRenderer:
         money = self.game_manager.economy.money if self.game_manager.economy else 0
         mode = self.input_handler.interaction_mode
 
-        hud_text = f" MODE: {mode} (Q)   |   [1-{len(self.input_handler.tool_groups)}] TOOL: {tool}   |   [R] ROTATION: {direction}   |   CASH: ${money}"
+        hud_text = f" MODE: {mode} (Q)   |   [1-{len(self.input_handler.tool_groups)}] TOOL: {tool}   |   [R] ROTATION: {self.direction_text[direction]}   |   CASH: ${money}"
         text_surface = self.font.render(hud_text, True, (240, 240, 245))
         
         padding = 10
@@ -637,7 +678,6 @@ class UIRenderer:
         dx /= length
         dy /= length
 
-        # clamp to screen edge with padding
         padding = 30
         if abs(dx) > 1e-6:
             t_x = ((self.camera.width - padding) if dx > 0 else padding) - cx
@@ -655,7 +695,6 @@ class UIRenderer:
         arrow_x = cx + dx * t
         arrow_y = cy + dy * t
 
-        # bigger arrow geometry
         arrow_len = 28
         arrow_half_width = 12
 

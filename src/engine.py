@@ -4,7 +4,7 @@ import os
 from perlin_noise import PerlinNoise
 from functools import lru_cache
 import src.entities as entities
-from src.registry import ore_registry
+from src.registry import machine_registry, item_registry, ore_registry
 
 class Chunk:
     def __init__(self, cx, cy):
@@ -161,8 +161,9 @@ class SaveLoadManager:
             os.makedirs(directory, exist_ok=True)
         save_data = {
             "money": self.economy.money,
-            "chunks": [],
-            "seed": self.game_map.generator.seed
+            "inventory": self.inventory.to_dict(),
+            "seed": self.game_map.generator.seed,
+            "chunks": []
         }
 
         for (cx, cy), chunk in self.game_map.chunks.items():
@@ -177,7 +178,9 @@ class SaveLoadManager:
             
             for pos, entity in chunk.grid.items():
                 if hasattr(entity, "to_dict"):
-                    chunk_data["entities"].append(entity.to_dict())
+                    data = entity.to_dict()
+                    if data is not None:
+                        chunk_data["entities"].append(data)
                     
             save_data["chunks"].append(chunk_data)
 
@@ -195,9 +198,14 @@ class SaveLoadManager:
 
         self.economy.money = save_data.get("money", 0)
         
+        if "inventory" in save_data:
+            self.inventory.from_dict(save_data["inventory"])
+        
         saved_seed = save_data.get("seed")
         if saved_seed is not None:
             self.game_map.generator = MapGenerator(seed=saved_seed)
+
+        self.game_map.spawn_fixed_hubs(self.inventory, self.economy)
 
         for chunk_data in save_data.get("chunks", []):
             for entity_data in chunk_data.get("entities", []):
@@ -211,6 +219,7 @@ class SaveLoadManager:
                         economy_manager=self.economy,
                         player_inventory=self.inventory
                     )
-                    self.game_map.place_block(new_block)
+                    if new_block:
+                        self.game_map.place_block(new_block)
 
         return True

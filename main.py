@@ -6,7 +6,7 @@ from src.asset_manager import AssetManager
 from src.player import Economy, Inventory
 from src.UI.ui_render import UIRenderer, InputHandler, Camera 
 from src.UI.menu import MainMenu
-from src.registry import ore_registry
+from src.registry import machine_registry, item_registry, ore_registry
 
 def main():
     """
@@ -48,7 +48,11 @@ def main():
     pygame.display.set_caption("Factory67")
     clock = pygame.time.Clock()
 
+    machine_registry.load_from_directory("data/machines")
+    item_registry.load_from_file("data/items.json")
     ore_registry.load_from_file("data/ores.json")
+    machine_registry.generate_ore_recipes(ore_registry.get_all_ores())
+    item_registry.generate_ore_items(ore_registry.get_all_ores())
 
     game_map = GameMap()
     economy = Economy()

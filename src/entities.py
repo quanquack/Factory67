@@ -57,9 +57,9 @@ class Position:
             A mapping of cardinal directions ('N', 'S', 'E', 'W') to (x, y) tuples.
         """
         return {
-            "N": Position(self.x, self.y + 1),
+            "N": Position(self.x, self.y - 1),
             "E": Position(self.x + 1, self.y),
-            "S": Position(self.x, self.y - 1),
+            "S": Position(self.x, self.y + 1),
             "W": Position(self.x - 1, self.y)
         }
     
@@ -595,8 +595,14 @@ class Machine(BaseBlock):
     def process_tick(self):
         """Processes a single tick of the machine's core logic."""
         if not self.is_jammed:
-            if self.output_inventory.slots:
-                item_to_push = next(iter(self.output_inventory.slots))
+            item_to_push = None
+            
+            for item_name, slot in self.output_inventory.slots.items():
+                if slot.current_amount > 0:
+                    item_to_push = item_name
+                    break
+            
+            if item_to_push:
                 if self.output.try_push(item_to_push):
                     self.output_inventory.remove_items({item_to_push: 1})
                     self.is_jammed = False
@@ -951,10 +957,25 @@ class Conveyor(BaseBlock):
             self.is_jammed = False
             self.input.ping()
             return
+        
+        front_cap = 1.0
+
+        if self.output.target and isinstance(self.output.target, Conveyor):
+            target_conv = self.output.target
+            last_item = None
+            
+            if target_conv.pending_items:
+                last_item = target_conv.pending_items[-1]
+            elif target_conv.items:
+                last_item = target_conv.items[-1]
+                
+            if last_item:
+                dynamic_cap = last_item.progress + 1.0 - self.spacing
+                front_cap = min(1.0, dynamic_cap)
 
         for i, item in enumerate(self.items):
             if i == 0:
-                cap = 1.0
+                cap = front_cap
             else:
                 cap = self.items[i - 1].progress - self.spacing
 
@@ -969,6 +990,8 @@ class Conveyor(BaseBlock):
                 self.is_jammed = False
             else:
                 self.is_jammed = True
+        else:
+            self.is_jammed = (front_cap < 1.0 and front.progress >= front_cap)
 
     def get_outbound_ports(self):
         return {self.output_dir: self.output}
@@ -1407,27 +1430,28 @@ class Seller(BaseBlock):
         return self.input
     
     def to_dict(self):
-        return {
-            "class_name": "Seller",
-            "x": self.position.x,
-            "y": self.position.y,
-        }
+        # return {
+        #     "class_name": "Seller",
+        #     "x": self.position.x,
+        #     "y": self.position.y,
+        # }
+        return None
     
     @classmethod
     def from_dict(cls, data, **kwargs):
-        economy_manager = kwargs.get("economy_manager")
-        new_block = cls(
-            x_pos=data["x"],
-            y_pos=data["y"],
-            economy_manager=economy_manager
-        )
+        # economy_manager = kwargs.get("economy_manager")
+        # new_block = cls(
+        #     x_pos=data["x"],
+        #     y_pos=data["y"],
+        #     economy_manager=economy_manager
+        # )
 
-        return new_block
+        # return new_block
+        return None
 
     def get_asset_name(self):
         return "seller"
     
-
     @classmethod
     def build(cls, x, y, ctx):
         return cls(x_pos=x, y_pos=y, economy_manager=ctx.get('economy'))
@@ -1500,22 +1524,24 @@ class CentralStorage(BaseBlock):
         return self.input
     
     def to_dict(self):
-        return {
-            "class_name": "CentralStorage",
-            "x": self.position.x,
-            "y": self.position.y,
-        }
+        # return {
+        #     "class_name": "CentralStorage",
+        #     "x": self.position.x,
+        #     "y": self.position.y,
+        # }
+        return None
     
     @classmethod
     def from_dict(cls, data, **kwargs):
-        player_inventory = kwargs.get("player_inventory")
-        new_block = cls(
-            x_pos=data["x"],
-            y_pos=data["y"],
-            player_inventory=player_inventory
-        )
+        # player_inventory = kwargs.get("player_inventory")
+        # new_block = cls(
+        #     x_pos=data["x"],
+        #     y_pos=data["y"],
+        #     player_inventory=player_inventory
+        # )
 
-        return new_block
+        # return new_block
+        return None
     
     def get_asset_name(self):
         return "storage"
