@@ -1,20 +1,12 @@
 import pygame
 import sys
-from src.engine import GameMap, GameManager
-from src.asset_manager import AssetManager
-from src.player import Economy
-from src.UI.ui_render import UIRenderer, InputHandler, Camera 
-from src.UI.menu import MainMenu 
-import pygame
-import sys
 import os
-
-from src.engine import GameMap, GameManager
+from src.engine import GameMap, GameManager, SaveLoadManager
 from src.asset_manager import AssetManager
-from src.player import Economy
+from src.player import Economy, Inventory
 from src.UI.ui_render import UIRenderer, InputHandler, Camera 
-from src.UI.menu import MainMenu 
-from src.save_load import SaveManager
+from src.UI.menu import MainMenu
+from src.registry import ore_registry
 
 def main():
     """
@@ -51,14 +43,17 @@ def main():
     """
 
     pygame.init()
-    screen_width, screen_height = 800, 600
+    screen_width, screen_height = 1280, 720
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Factory67")
     clock = pygame.time.Clock()
 
+    ore_registry.load_from_file("data/ores.json")
+
     game_map = GameMap()
     economy = Economy()
-    game_manager = GameManager(game_map, economy_manager=economy)
+    player_inventory = Inventory()
+    game_manager = GameManager(game_map, economy_manager=economy, player_inventory=player_inventory)
 
     asset_manager = AssetManager(tile_size=16)
     camera = Camera(screen_width, screen_height, base_tile_size=16)
@@ -67,8 +62,8 @@ def main():
     main_menu = MainMenu(screen_width, screen_height)
 
     # SAVE/LOAD
-    save_manager = SaveManager(game_manager)
-    save_file_path = "data/savegame.json"
+    save_manager = SaveLoadManager(game_manager)
+    save_file_path = "save/savegame.json"
 
     #"MENU" and "PLAYING"
     current_state = "MENU" 
@@ -87,8 +82,12 @@ def main():
                     action = main_menu.handle_click(event.pos)
                     
                     if action == "new_game":
-                        game_manager.game_map.grid.clear()
+                        game_manager.game_map.chunks.clear()
                         game_manager.economy.money = 0
+                        game_manager.game_map.spawn_fixed_hubs(
+                            game_manager.inventory, 
+                            game_manager.economy
+                        )
                         current_state = "PLAYING"
                         print("[System] New game start!")
                         

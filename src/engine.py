@@ -1,8 +1,10 @@
 import random
 import json
+import os
 from perlin_noise import PerlinNoise
 from functools import lru_cache
-import entities
+import src.entities as entities
+from src.registry import ore_registry
 
 class Chunk:
     def __init__(self, cx, cy):
@@ -16,31 +18,11 @@ class MapGenerator:
     def __init__(self, seed=None):
         self.seed = seed if seed is not None else random.randint(0, 2**32)
 
-        self.ore_configs = {
-            "copper": {
-                "scale": 0.08, 
-                "threshold": 0.25, 
-                "seed": 0
-            },
-            "iron": {
-                "scale": 0.08, 
-                "threshold": 0.25, 
-                "seed": 1
-            },
-            "gold": {
-                "scale": 0.08, 
-                "threshold": 0.25, 
-                "seed": 2
-            },
-            "aluminum": {
-                "scale": 0.08, 
-                "threshold": 0.25, 
-                "seed": 3
-            }
-        }
+        self.ore_configs = ore_registry.get_all_ores()
+
         self.noise_layers = {}
         for ore_name, config in self.ore_configs.items():
-            ore_seed = self.seed + config["seed"]
+            ore_seed = self.seed + config.get("seed_offset", 0)
             self.noise_layers[ore_name] = PerlinNoise(octaves=3, seed=ore_seed)
 
     @lru_cache(maxsize=16384)
@@ -73,6 +55,37 @@ class GameMap:
             return chunk.grid.get((x_pos, y_pos))
         return None
     
+    def spawn_fixed_hubs(self, player_inventory, economy_manager):
+        storage_hub = entities.CentralStorage(-8, -2, player_inventory)
+        storage_hub.width = 4
+        storage_hub.height = 4
+        
+        for dx in range(4):
+            for dy in range(4):
+                grid_x = -8 + dx
+                grid_y = -2 + dy
+                cx, cy = self._get_chunk(grid_x, grid_y)
+                chunk = self.get_chunk(cx, cy, create_new=True)
+                chunk.grid[(grid_x, grid_y)] = storage_hub
+                chunk.is_modified = True
+                
+        storage_hub.connection.on_place(self)
+
+        seller_hub = entities.Seller(4, -2, economy_manager)
+        seller_hub.width = 4
+        seller_hub.height = 4
+        
+        for dx in range(4):
+            for dy in range(4):
+                grid_x = 4 + dx
+                grid_y = -2 + dy
+                cx, cy = self._get_chunk(grid_x, grid_y)
+                chunk = self.get_chunk(cx, cy, create_new=True)
+                chunk.grid[(grid_x, grid_y)] = seller_hub
+                chunk.is_modified = True
+                
+        seller_hub.connection.on_place(self)
+    
     def place_block(self, block_object):
         x, y = block_object.position.get_coord()
         cx, cy = self._get_chunk(x, y)
@@ -99,6 +112,9 @@ class GameMap:
             
         block_object = chunk.grid.get((x_pos, y_pos))
         if not block_object:
+            return False
+        
+        if isinstance(block_object, (entities.CentralStorage, entities.Seller)):
             return False
             
         if hasattr(block_object, 'connection'):
@@ -139,6 +155,10 @@ class SaveLoadManager:
         self.inventory = game_manager.inventory
 
     def save_game(self, filepath="save.json"):
+        directory = os.path.dirname(filepath)
+        
+        if directory:
+            os.makedirs(directory, exist_ok=True)
         save_data = {
             "money": self.economy.money,
             "chunks": [],

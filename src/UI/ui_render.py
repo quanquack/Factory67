@@ -1,6 +1,6 @@
 import pygame
 from src.entities import Miner, Conveyor, Machine, Seller
-
+from src.registry import ore_registry
 
 class Camera:
     """
@@ -21,8 +21,8 @@ class Camera:
         
         # Camera state
         self.zoom = 1.0
-        self.offset_x = 0.0 
-        self.offset_y = 0.0 
+        self.offset_x = screen_width / 2.0 
+        self.offset_y = screen_height / 2.0 
 
     @property
     def actual_tile_size(self):
@@ -100,9 +100,19 @@ class InputHandler:
         self.game_manager = game_manager
         self.camera = camera
         self.tile_size = tile_size
+
+        self.tool_groups = [
+            ['miner'],
+            ['smelter', 'bending_machine', 'wire_drawer', 'assembler'],
+            ['conveyor'],
+            ['merger'],
+            ['splitter', 'filter']
+        ]
+
+        self.group_indices = [0] * len(self.tool_groups)
+        self.selected_slot = 0
         
         # Building stat
-        self.selected_tool = 'conveyor'  
         self.current_direction = 'E'     
         self.directions = ['N', 'E', 'S', 'W'] 
         
@@ -111,6 +121,16 @@ class InputHandler:
         self.is_panning = False
         self.last_mouse_pos = (0, 0)
 
+        self.is_building = False
+        self.is_destroying = False
+        self.last_interacted_grid = None
+        self.custom_in_dir = None
+        self.interaction_mode = 'PAN'
+
+    @property
+    def selected_tool(self):
+        return self.tool_groups[self.selected_slot][self.group_indices[self.selected_slot]]
+
     def handle_keydown(self, key):
         """
         Handle keyboard input for selecting tools and rotating direction.
@@ -118,14 +138,18 @@ class InputHandler:
         Args:
             key (int): The key code from the input event (e.g., pygame key constant).
         """
-
-        if key == pygame.K_1: self.selected_tool = 'conveyor'
-        elif key == pygame.K_2: self.selected_tool = 'miner'
-        elif key == pygame.K_3: self.selected_tool = 'machine'
-        elif key == pygame.K_4: self.selected_tool = 'seller'
+        if pygame.K_1 <= key <= pygame.K_9:
+            idx = key - pygame.K_1
+            if idx < len(self.tool_groups):
+                if self.selected_slot == idx:
+                    self.group_indices[idx] = (self.group_indices[idx] + 1) % len(self.tool_groups[idx])
+                else:
+                    self.selected_slot = idx
         elif key == pygame.K_r:
             current_idx = self.directions.index(self.current_direction)
             self.current_direction = self.directions[(current_idx + 1) % 4]
+        elif key == pygame.K_q:
+            self.interaction_mode = 'PAN' if self.interaction_mode == 'BUILD' else 'BUILD'
 
     def handle_zoom(self, y_scroll, mouse_x, mouse_y):
         """
@@ -136,13 +160,13 @@ class InputHandler:
             mouse_x (float): Current mouse X position on screen.
             mouse_y (float): Current mouse Y position on screen.
         """
-        zoom_speed = 0.1
+        zoom_factor = 1.15
         old_zoom = self.camera.zoom
         
         if y_scroll > 0:
-            new_zoom = min(3.0, self.camera.zoom + zoom_speed)
+            new_zoom = min(6.0, self.camera.zoom * zoom_factor)
         elif y_scroll < 0:
-            new_zoom = max(0.3, self.camera.zoom - zoom_speed)
+            new_zoom = max(0.8, self.camera.zoom / zoom_factor)
         else:
             return
 
@@ -162,12 +186,22 @@ class InputHandler:
             y (float): Mouse Y position on screen.
             button (int): Mouse button identifier (e.g., 1 = left, 2 = middle, 3 = right).
         """
-        if button == 2: 
-            self.is_panning = True
-            self.last_mouse_pos = (x, y)
-        else: 
+        if button == 1: 
+            if self.interaction_mode == 'PAN':
+                self.is_panning = True
+                self.last_mouse_pos = (x, y)
+            elif self.interaction_mode == 'BUILD':
+                self.is_building = True
+                self.custom_in_dir = None
+                grid_x, grid_y = self.camera.screen_to_world(x, y)
+                self.last_interacted_grid = (grid_x, grid_y)
+                self._handle_build_destroy(grid_x, grid_y, 1)
+                
+        elif button == 3 and self.interaction_mode == 'BUILD': 
+            self.is_destroying = True
             grid_x, grid_y = self.camera.screen_to_world(x, y)
-            self._handle_build_destroy(grid_x, grid_y, button)
+            self.last_interacted_grid = (grid_x, grid_y)
+            self._handle_build_destroy(grid_x, grid_y, 3)
 
     def handle_mouse_up(self, button):
         """
@@ -176,8 +210,14 @@ class InputHandler:
         Args:
             button (int): Mouse button identifier.
         """
-        if button == 2:
+        if button == 1:
             self.is_panning = False
+            self.is_building = False
+            self.last_interacted_grid = None
+            self.custom_in_dir = None
+        elif button == 3:
+            self.is_destroying = False
+            self.last_interacted_grid = None
         
     def handle_mouse_motion(self, x, y):
         """
@@ -194,7 +234,32 @@ class InputHandler:
             self.camera.offset_y += dy
             self.last_mouse_pos = (x, y)
 
-        self.hovered_grid = self.camera.screen_to_world(x, y)
+        grid_x, grid_y = self.camera.screen_to_world(x, y)
+        self.hovered_grid = (grid_x, grid_y)
+
+        if (self.is_building or self.is_destroying) and self.hovered_grid != self.last_interacted_grid:
+            
+            if self.is_building and self.selected_tool == 'conveyor' and self.last_interacted_grid:
+                dx = grid_x - self.last_interacted_grid[0]
+                dy = grid_y - self.last_interacted_grid[1]
+                
+                if abs(dx) > abs(dy):
+                    drag_dir = 'E' if dx > 0 else 'W'
+                else:
+                    drag_dir = 'N' if dy > 0 else 'S'
+                
+                prev_block = self.game_manager.game_map.get_block_at(*self.last_interacted_grid)
+                if prev_block and type(prev_block).__name__ == 'Conveyor':
+                    prev_block.output_dir = drag_dir
+                    prev_block.connection.update_outbound(self.game_manager.game_map)
+
+                opposite_dirs = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
+                self.custom_in_dir = opposite_dirs[drag_dir]
+                self.current_direction = drag_dir
+
+            button_action = 1 if self.is_building else 3
+            self._handle_build_destroy(grid_x, grid_y, button_action)
+            self.last_interacted_grid = self.hovered_grid
 
     def _handle_build_destroy(self, grid_x, grid_y, button):
         """
@@ -205,21 +270,13 @@ class InputHandler:
             grid_y (int): Grid Y coordinate.
             button (int): Mouse button identifier (1 = build, 3 = destroy).
         """
-        pos_tuple = (grid_x, grid_y)
         if button == 1:
-            if pos_tuple not in self.game_manager.game_map.grid:
+            if self.game_manager.game_map.get_block_at(grid_x, grid_y) is None:
                 new_block = self._create_entity(grid_x, grid_y)
                 if new_block:
-                    self.game_manager.game_map.grid[pos_tuple] = new_block
-                    if hasattr(new_block, 'connection'):
-                        new_block.connection.on_place(self.game_manager.game_map)
+                    self.game_manager.game_map.place_block(new_block)
         elif button == 3:
-            if pos_tuple in self.game_manager.game_map.grid:
-                block_to_remove = self.game_manager.game_map.grid[pos_tuple]
-                if hasattr(block_to_remove, 'connection'):
-                    block_to_remove.connection.on_break(self.game_manager.game_map)
-                else:
-                    self.game_manager.game_map.grid.pop(pos_tuple, None)
+            self.game_manager.game_map.remove_block(grid_x, grid_y)
 
     def _create_entity(self, x, y):
         """
@@ -234,16 +291,19 @@ class InputHandler:
         """
         opposite_dirs = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
         in_dir = opposite_dirs[self.current_direction]
+        final_in_dir = self.custom_in_dir if self.custom_in_dir else in_dir
 
-        if self.selected_tool == 'conveyor':
-            return Conveyor(x_pos=x, y_pos=y, input_dir=in_dir, output_dir=self.current_direction)
-        elif self.selected_tool == 'miner':
-            return Miner(x_pos=x, y_pos=y, ore='iron_ore', output_dir=self.current_direction)
-        elif self.selected_tool == 'machine':
-            return Machine(x_pos=x, y_pos=y, output_dir=self.current_direction, machine_type='smelter')
-        elif self.selected_tool == 'seller':
-            return Seller(x_pos=x, y_pos=y, economy_manager=self.game_manager.economy)
-        return None
+        context = {
+            'game_map': self.game_manager.game_map,
+            'economy': self.game_manager.economy,
+            'inventory': self.game_manager.inventory,
+            'in_dir': final_in_dir,
+            'out_dir': self.current_direction,
+            'tool': self.selected_tool
+        }
+        
+        from src.entities import spawn_entity
+        return spawn_entity(self.selected_tool, x, y, context)
 
 
 class UIRenderer:
@@ -271,6 +331,33 @@ class UIRenderer:
         self.camera = camera
         self.bg_color = (30, 32, 40) 
         self.font = pygame.font.SysFont("Arial", 16, bold=True)
+        self.chunk_surfaces = {}
+
+    def _get_chunk_surface(self, cx, cy):
+        if (cx, cy) in self.chunk_surfaces:
+            return self.chunk_surfaces[(cx, cy)]
+            
+        chunk_size = self.game_manager.game_map.chunk_size
+        base_size = self.camera.base_tile_size
+        
+        surface = pygame.Surface((chunk_size * base_size, chunk_size * base_size), pygame.SRCALPHA)
+        
+        for local_x in range(chunk_size):
+            for local_y in range(chunk_size):
+                world_x = cx * chunk_size + local_x
+                world_y = cy * chunk_size + local_y
+                
+                ore_name = self.game_manager.game_map.get_ore_at(world_x, world_y)
+                if ore_name:
+                    color = ore_registry.get_color(ore_name)
+                    rect = pygame.Rect(local_x * base_size, local_y * base_size, base_size, base_size)
+                    pygame.draw.rect(surface, color, rect)
+                    
+        if len(self.chunk_surfaces) > 256:
+            self.chunk_surfaces.pop(next(iter(self.chunk_surfaces)))
+            
+        self.chunk_surfaces[(cx, cy)] = surface
+        return surface
         
     def render_frame(self):
         """
@@ -279,19 +366,27 @@ class UIRenderer:
         This is the main rendering pipeline executed each frame.
         """
         self.screen.fill(self.bg_color)
+        self._draw_ores()
         self._draw_grid_lines()
 
-        # Draw visible entitie
         min_x, max_x, min_y, max_y = self.camera.get_visible_bounds()
+        rendered_entities = set()
+
         for grid_x in range(min_x, max_x + 1):
             for grid_y in range(min_y, max_y + 1):
-                pos = (grid_x, grid_y)
-                if pos in self.game_manager.game_map.grid:
-                    entity = self.game_manager.game_map.grid[pos]
-                    self._draw_entity(entity, grid_x, grid_y)
+                entity = self.game_manager.game_map.get_block_at(grid_x, grid_y)
+                
+                if entity:
+                    if entity in rendered_entities:
+                        continue
+                        
+                    self._draw_entity(entity, entity.position.x, entity.position.y)
+                    rendered_entities.add(entity)
 
         self._draw_ghost_block()
         self._draw_hud()
+        self._draw_hover_info()
+        self._draw_origin_indicator()
         pygame.display.flip()
 
     def _draw_grid_lines(self):
@@ -322,21 +417,24 @@ class UIRenderer:
             is_ghost (bool, optional): Whether to render as a semi-transparent preview. Defaults to False.
         """
         pixel_x, pixel_y = self.camera.world_to_screen(grid_x, grid_y)
-        
-        machine_name = getattr(entity, 'machine_type', 'unknown')
-        if hasattr(entity, 'ore'):
-            machine_name = 'miner'
-        elif hasattr(entity, 'input_dir') and hasattr(entity, 'output_dir'):
-            machine_name = 'conveyor'
-        elif type(entity).__name__ == 'Seller':
-            machine_name = 'seller'
+
+        if hasattr(entity, 'get_asset_name'):
+            machine_name = entity.get_asset_name()
+        else:
+            machine_name = type(entity).__name__.lower()
 
         filepath = f"assets/{machine_name}.png"
         surface = self.asset_manager.get_asset(machine_name, filepath)
 
+        width_tiles = getattr(entity, 'width', 1)
+        height_tiles = getattr(entity, 'height', 1)
         current_size = self.camera.actual_tile_size
-        if surface.get_width() != current_size:
-            surface = pygame.transform.scale(surface, (current_size, current_size))
+
+        target_w = current_size * width_tiles
+        target_h = current_size * height_tiles
+
+        if surface.get_width() != target_w or surface.get_height() != target_h:
+            surface = pygame.transform.scale(surface, (target_w, target_h))
 
         if is_ghost:
             ghost_surface = surface.copy()
@@ -347,6 +445,34 @@ class UIRenderer:
             # Draw moving items on conveyor
             if isinstance(entity, Conveyor) and not is_ghost:
                 self._draw_conveyor_items(entity, grid_x, grid_y)
+
+    def _draw_ores(self):
+        min_grid_x, max_grid_x, min_grid_y, max_grid_y = self.camera.get_visible_bounds()
+        chunk_size = self.game_manager.game_map.chunk_size
+        
+        min_cx = min_grid_x // chunk_size
+        max_cx = max_grid_x // chunk_size
+        min_cy = min_grid_y // chunk_size
+        max_cy = max_grid_y // chunk_size
+        
+        for cx in range(min_cx, max_cx + 1):
+            for cy in range(min_cy, max_cy + 1):
+                base_surface = self._get_chunk_surface(cx, cy)
+                
+                screen_x, screen_y = self.camera.world_to_screen(cx * chunk_size, cy * chunk_size)
+                
+                next_x, next_y = self.camera.world_to_screen((cx + 1) * chunk_size, (cy + 1) * chunk_size)
+                
+                target_width = next_x - screen_x
+                target_height = next_y - screen_y
+                
+                if target_width > 0 and target_height > 0:
+                    if self.camera.zoom != 1.0:
+                        scaled_surface = pygame.transform.scale(base_surface, (target_width, target_height))
+                    else:
+                        scaled_surface = base_surface
+                        
+                    self.screen.blit(scaled_surface, (screen_x, screen_y))
 
     def _draw_conveyor_items(self, conveyor, grid_x, grid_y):
         """
@@ -409,7 +535,7 @@ class UIRenderer:
         This provides visual feedback for placement before committing.
         """
         grid_x, grid_y = self.input_handler.hovered_grid
-        if (grid_x, grid_y) not in self.game_manager.game_map.grid:
+        if self.game_manager.game_map.get_block_at(grid_x, grid_y) is None:
             temp_block = self.input_handler._create_entity(grid_x, grid_y)
             if temp_block:
                 self._draw_entity(temp_block, grid_x, grid_y, is_ghost=True)
@@ -421,8 +547,9 @@ class UIRenderer:
         tool = self.input_handler.selected_tool.upper()
         direction = self.input_handler.current_direction
         money = self.game_manager.economy.money if self.game_manager.economy else 0
-        
-        hud_text = f" [1-4] TOOL: {tool}   |   [R] ROTATION: {direction}   |   CASH: ${money}"
+        mode = self.input_handler.interaction_mode
+
+        hud_text = f" MODE: {mode} (Q)   |   [1-{len(self.input_handler.tool_groups)}] TOOL: {tool}   |   [R] ROTATION: {direction}   |   CASH: ${money}"
         text_surface = self.font.render(hud_text, True, (240, 240, 245))
         
         padding = 10
@@ -431,3 +558,120 @@ class UIRenderer:
         pygame.draw.rect(self.screen, (20, 22, 26), hud_rect)
         pygame.draw.rect(self.screen, (75, 80, 95), hud_rect, 1)
         self.screen.blit(text_surface, (12 + padding, 12 + padding // 2))
+
+    def _draw_hover_info(self):
+        """
+        Render a dynamic tooltip panel at the bottom right of the screen
+        showing information about the currently hovered tile.
+        """
+        grid_x, grid_y = self.input_handler.hovered_grid
+        entity = self.game_manager.game_map.get_block_at(grid_x, grid_y)
+        info_lines = [f"({grid_x}, {grid_y})"]
+        if entity:
+            class_name = type(entity).__name__
+            info_lines.append(f"BLOCK: {class_name.upper()}")
+            
+            if hasattr(entity, 'level'):
+                info_lines.append(f"LEVEL: {entity.level}")
+                
+            if hasattr(entity, 'ore'):
+                info_lines.append(f"MINING: {entity.ore.upper()}")
+                
+            elif hasattr(entity, 'machine_type'):
+                info_lines.append(f"TYPE: {entity.machine_type.upper()}")
+                recipe_mgr = getattr(entity, 'recipe_manager', None)
+                if recipe_mgr and recipe_mgr.selected_recipe:
+                    info_lines.append(f"RECIPE: {recipe_mgr.selected_recipe.upper()}")
+            
+            if hasattr(entity, 'output_dir'):
+                info_lines.append(f"OUTPUT DIRECTION: {entity.output_dir}")
+                
+        else:
+            ore_name = self.game_manager.game_map.get_ore_at(grid_x, grid_y)
+            if ore_name:
+                info_lines.append(f"GROUND: {ore_name.upper()} ORE")
+            else:
+                info_lines.append("GROUND: EMPTY")
+
+        rendered_lines = [self.font.render(line, True, (240, 240, 245)) for line in info_lines]
+        
+        padding = 12
+        line_height = self.font.get_linesize() + 4
+        
+        max_width = max(surf.get_width() for surf in rendered_lines)
+        box_width = max_width + padding * 2
+        box_height = padding * 2 + len(info_lines) * line_height - 4
+        
+        box_x = self.camera.width - box_width - 20
+        box_y = self.camera.height - box_height - 20
+        
+        hud_rect = pygame.Rect(box_x, box_y, box_width, box_height)
+        pygame.draw.rect(self.screen, (20, 22, 26), hud_rect)
+        pygame.draw.rect(self.screen, (75, 80, 95), hud_rect, 1)
+        
+        for i, surf in enumerate(rendered_lines):
+            self.screen.blit(surf, (box_x + padding, box_y + padding + i * line_height))
+
+    def _draw_origin_indicator(self):
+        """
+        Draws a low-opacity arrow pointing toward (0, 0) when it is off-screen.
+        """
+        origin_screen_x, origin_screen_y = self.camera.world_to_screen(0, 0)
+
+        on_screen = (
+            0 <= origin_screen_x <= self.camera.width and
+            0 <= origin_screen_y <= self.camera.height
+        )
+
+        if on_screen:
+            return
+
+        cx = self.camera.width / 2
+        cy = self.camera.height / 2
+
+        dx = origin_screen_x - cx
+        dy = origin_screen_y - cy
+        length = (dx ** 2 + dy ** 2) ** 0.5
+        if length == 0:
+            return
+        dx /= length
+        dy /= length
+
+        # clamp to screen edge with padding
+        padding = 30
+        if abs(dx) > 1e-6:
+            t_x = ((self.camera.width - padding) if dx > 0 else padding) - cx
+            t_x /= dx
+        else:
+            t_x = float('inf')
+
+        if abs(dy) > 1e-6:
+            t_y = ((self.camera.height - padding) if dy > 0 else padding) - cy
+            t_y /= dy
+        else:
+            t_y = float('inf')
+
+        t = min(t_x, t_y)
+        arrow_x = cx + dx * t
+        arrow_y = cy + dy * t
+
+        # bigger arrow geometry
+        arrow_len = 28
+        arrow_half_width = 12
+
+        tip_x = arrow_x + dx * arrow_len / 2
+        tip_y = arrow_y + dy * arrow_len / 2
+        base_x = arrow_x - dx * arrow_len / 2
+        base_y = arrow_y - dy * arrow_len / 2
+
+        px, py = -dy, dx
+
+        points = [
+            (tip_x, tip_y),
+            (base_x + px * arrow_half_width, base_y + py * arrow_half_width),
+            (base_x - px * arrow_half_width, base_y - py * arrow_half_width),
+        ]
+
+        arrow_surface = pygame.Surface((self.camera.width, self.camera.height), pygame.SRCALPHA)
+        pygame.draw.polygon(arrow_surface, (255, 255, 255, 80), points)
+        self.screen.blit(arrow_surface, (0, 0))
