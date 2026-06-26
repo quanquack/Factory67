@@ -108,11 +108,9 @@ class MachineWindow:
 
     def open(self, machine):
         self.machine = machine
-        
-        if hasattr(machine, 'machine_type'):
-            self.frame.title = f"{machine.machine_type.upper()} MENU"
-        else:
-            self.frame.title = "MINER MENU"
+
+        name = machine.get_asset_name()
+        self.frame.title = f"{name.upper()} MENU"
             
         self.frame.open()
         self._build_rects()
@@ -180,7 +178,7 @@ class MachineWindow:
             self.upgrade_rect = None
             y += 75
         else:
-            m_type = getattr(self.machine, 'machine_type', 'miner')
+            m_type = self.machine.get_asset_name()
             costs = machine_registry.get_metadata(m_type).get("upgrade_costs", [])
             cost = costs[self.machine.level - 1] if self.machine.level - 1 < len(costs) else {}
 
