@@ -1,6 +1,7 @@
 import pygame
-from src.entities import Miner, Conveyor, Machine, Seller
+import src.entities
 from src.registry import ore_registry
+from src.UI.windows import MachineWindow, StorageWindow, RouterConfigWindow, RecipeUnlockWindow
 
 OPPOSITE_DIRS = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
 
@@ -129,9 +130,26 @@ class InputHandler:
         self.custom_in_dir = None
         self.interaction_mode = 'PAN'
 
+        self.windows = {
+            'machine': MachineWindow(camera.width, camera.height, game_manager.inventory),
+            'storage': StorageWindow(camera.width, camera.height),
+            'router': RouterConfigWindow(camera.width, camera.height),
+            'recipe_unlock': RecipeUnlockWindow(camera.width, camera.height, game_manager.economy)
+        }
+        self.active_window = None
+
     @property
     def selected_tool(self):
         return self.tool_groups[self.selected_slot][self.group_indices[self.selected_slot]]
+    
+    def handle_window_event(self, event):
+        "Pass pygame event to the active window to process"
+        if self.active_window and self.active_window.is_open:
+            self.active_window.handle_event(event)
+            if not self.active_window.is_open:
+                self.active_window = None
+            return True
+        return False
 
     def handle_keydown(self, key):
         """
@@ -140,6 +158,9 @@ class InputHandler:
         Args:
             key (int): The key code from the input event (e.g., pygame key constant).
         """
+        if self.active_window and self.active_window.is_open:
+            return
+        
         if pygame.K_1 <= key <= pygame.K_9:
             idx = key - pygame.K_1
             if idx < len(self.tool_groups):
@@ -152,6 +173,9 @@ class InputHandler:
             self.current_direction = self.directions[(current_idx + 1) % 4]
         elif key == pygame.K_q:
             self.interaction_mode = 'PAN' if self.interaction_mode == 'BUILD' else 'BUILD'
+        elif key == pygame.K_b:
+            self.active_window = self.windows['recipe_unlock']
+            self.active_window.open(self.game_manager.inventory)
 
     def handle_zoom(self, y_scroll, mouse_x, mouse_y):
         """
@@ -188,14 +212,35 @@ class InputHandler:
             y (float): Mouse Y position on screen.
             button (int): Mouse button identifier (e.g., 1 = left, 2 = middle, 3 = right).
         """
+        if self.active_window and self.active_window.is_open:
+            return
+
         if button == 1: 
+            grid_x, grid_y = self.camera.screen_to_world(x, y)
+            entity = self.game_manager.game_map.get_block_at(grid_x, grid_y)
+
             if self.interaction_mode == 'PAN':
-                self.is_panning = True
-                self.last_mouse_pos = (x, y)
+                if entity:
+                    class_name = type(entity).__name__
+                    if class_name in ('Machine', 'Miner'):
+                        self.active_window = self.windows['machine']
+                        self.active_window.open(entity)
+                        return
+                    elif class_name == 'CentralStorage':
+                        self.active_window = self.windows['storage']
+                        self.active_window.open(entity)
+                        return
+                    elif class_name == 'Router':
+                        self.active_window = self.windows['router']
+                        self.active_window.open(entity)
+                        return
+                else:    
+                    self.is_panning = True
+                    self.last_mouse_pos = (x, y)
+
             elif self.interaction_mode == 'BUILD':
                 self.is_building = True
                 self.custom_in_dir = None
-                grid_x, grid_y = self.camera.screen_to_world(x, y)
                 self.last_interacted_grid = (grid_x, grid_y)
                 self._handle_build_destroy(grid_x, grid_y, 1)
                 
@@ -403,18 +448,27 @@ class UIRenderer:
         for grid_x in range(min_x, max_x + 1):
             for grid_y in range(min_y, max_y + 1):
                 entity = self.game_manager.game_map.get_block_at(grid_x, grid_y)
-                
-                if entity:
-                    if entity in rendered_entities:
-                        continue
-                        
+                if entity and entity not in rendered_entities:
                     self._draw_entity(entity, entity.position.x, entity.position.y)
+                    rendered_entities.add(entity)
+
+        rendered_entities.clear()
+        for grid_x in range(min_x, max_x + 1):
+            for grid_y in range(min_y, max_y + 1):
+                entity = self.game_manager.game_map.get_block_at(grid_x, grid_y)
+                if entity and entity not in rendered_entities:
+                    if hasattr(entity, 'items'):
+                        self._draw_conveyor_items(entity, entity.position.x, entity.position.y)
                     rendered_entities.add(entity)
 
         self._draw_ghost_block()
         self._draw_hud()
         self._draw_hover_info()
         self._draw_origin_indicator()
+
+        if self.input_handler.active_window and self.input_handler.active_window.is_open:
+            self.input_handler.active_window.draw(self.screen)
+            
         pygame.display.flip()
 
     def _draw_grid_lines(self):
@@ -470,9 +524,6 @@ class UIRenderer:
             self.screen.blit(ghost_surface, (pixel_x, pixel_y))
         else:
             self.screen.blit(surface, (pixel_x, pixel_y))
-            # Draw moving items on conveyor
-            if isinstance(entity, Conveyor) and not is_ghost:
-                self._draw_conveyor_items(entity, grid_x, grid_y)
 
     def _draw_ores(self):
         min_grid_x, max_grid_x, min_grid_y, max_grid_y = self.camera.get_visible_bounds()

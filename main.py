@@ -47,6 +47,7 @@ def main():
     screen = pygame.display.set_mode((screen_width, screen_height))
     pygame.display.set_caption("Factory67")
     clock = pygame.time.Clock()
+    pygame.key.set_repeat(400, 50)
 
     machine_registry.load_from_directory("data/machines")
     item_registry.load_from_file("data/items.json")
@@ -80,6 +81,9 @@ def main():
                     save_manager.save_game(save_file_path)
                     print("[System] Automatically saved!")
                 running = False
+
+            if input_handler.handle_window_event(event):
+                continue
                 
             if current_state == "MENU":
                 if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
