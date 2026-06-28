@@ -106,7 +106,7 @@ class InputHandler:
 
         self.tool_groups = [
             ['miner'],
-            ['smelter', 'bending_machine', 'wire_drawer', 'assembler'],
+            ['smelter', 'bender', 'wiremill', 'assembler'],
             ['conveyor'],
             ['merger'],
             ['splitter', 'filter']
@@ -131,7 +131,7 @@ class InputHandler:
         self.interaction_mode = 'PAN'
 
         self.windows = {
-            'machine': MachineWindow(camera.width, camera.height, game_manager.inventory),
+            'machine': MachineWindow(camera.width, camera.height, game_manager),
             'storage': StorageWindow(camera.width, camera.height),
             'router': RouterConfigWindow(camera.width, camera.height),
             'recipe_unlock': RecipeUnlockWindow(camera.width, camera.height, game_manager.economy)
@@ -505,8 +505,17 @@ class UIRenderer:
         else:
             machine_name = type(entity).__name__.lower()
 
+        angle = 0
+        class_name = type(entity).__name__
+
+        if class_name not in ('Conveyor', 'CentralStorage', 'Seller'):
+            direction = getattr(entity, 'output_dir', OPPOSITE_DIRS[getattr(entity, 'input_dir', 'N')])
+            
+            dir_to_angle = {'S': 0, 'E': 90, 'N': 180, 'W': -90}
+            angle = dir_to_angle.get(direction, 0)
+
         filepath = f"assets/{machine_name}.png"
-        surface = self.asset_manager.get_asset(machine_name, filepath)
+        surface = self.asset_manager.get_asset(machine_name, filepath, angle)
 
         width_tiles = getattr(entity, 'width', 1)
         height_tiles = getattr(entity, 'height', 1)
@@ -567,7 +576,7 @@ class UIRenderer:
             grid_y (int): Grid Y coordinate of the conveyor.
         """
         current_size = self.camera.actual_tile_size
-        item_size = max(2, current_size // 3)
+        item_size = max(2, current_size // 2)
 
         start_x, start_y = self.camera.world_to_screen(grid_x, grid_y)
         center_x = start_x + current_size / 2

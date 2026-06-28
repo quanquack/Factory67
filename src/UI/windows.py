@@ -93,9 +93,10 @@ class WindowFrame:
         return surf.get_height()
     
 class MachineWindow:
-    def __init__(self, screen_w, screen_h, player_inventory):
+    def __init__(self, screen_w, screen_h, game_manager):
         self.frame = WindowFrame(screen_w, screen_h, 420, 480, "MACHINE STATUS")
-        self.player_inventory = player_inventory
+        self.game_manager = game_manager
+        self.player_inventory = game_manager.inventory
         self.machine = None
         self.upgrade_rect = None
         self.recipe_rects = []
@@ -108,10 +109,8 @@ class MachineWindow:
 
     def open(self, machine):
         self.machine = machine
-
         name = machine.get_asset_name()
         self.frame.title = f"{name.upper()} MENU"
-            
         self.frame.open()
         self._build_rects()
 
@@ -127,8 +126,7 @@ class MachineWindow:
 
         if hasattr(self.machine, 'recipe_manager') and self.machine.recipe_manager.require_selection:
             y += 20
-            
-            m_type = getattr(self.machine, 'machine_type', '')
+            m_type = self.machine.get_asset_name()
             unlock_costs = machine_registry.get_metadata(m_type).get("recipe_unlock_costs", {})
             
             for recipe in self.machine.recipe_manager.recipes:
@@ -154,7 +152,23 @@ class MachineWindow:
                     
         if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
             if self.upgrade_rect and self.upgrade_rect.collidepoint(event.pos):
-                self.machine.upgrade(self.player_inventory)
+                
+                mods = pygame.key.get_mods()
+                if mods & pygame.KMOD_SHIFT:
+                    target_type = getattr(self.machine, 'machine_type', 'miner') if hasattr(self.machine, 'machine_type') else 'miner'
+                    target_level = self.machine.level
+                    
+                    for chunk in self.game_manager.game_map.chunks.values():
+                        for entity in chunk.grid.values():
+                            class_name = type(entity).__name__
+                            if class_name in ('Machine', 'Miner'):
+                                e_type = getattr(entity, 'machine_type', 'miner') if hasattr(entity, 'machine_type') else 'miner'
+                                if e_type == target_type and getattr(entity, 'level', 1) == target_level:
+                                    entity.upgrade(self.player_inventory)
+                else:
+                    self.machine.upgrade(self.player_inventory)
+                
+                self._build_rects()
                 return True
                 
             for recipe, rect in self.recipe_rects:
@@ -195,7 +209,7 @@ class MachineWindow:
 
             y += 10
             self.upgrade_rect = pygame.Rect(x, y, self.frame.width - self.frame.PADDING * 2, self.frame.BTN_H)
-            self.frame.draw_button(screen, self.upgrade_rect, "UPGRADE",
+            self.frame.draw_button(screen, self.upgrade_rect, "UPGRADE (SHIFT to mass upgrade)",
                                    active=can_afford,
                                    hovered=self.hovered_upgrade and can_afford)
             y += self.frame.BTN_H + 10
@@ -279,6 +293,7 @@ class RouterConfigWindow:
         self.dropdown_scroll = 0
         self.dropdown_hovered = None
         self.dropdown_visible_items = 5
+        self.direction_text = {'N': '↑', 'S': '↓', 'E': '→', 'W': '←'}
 
     @property
     def is_open(self):
@@ -447,7 +462,7 @@ class RouterConfigWindow:
 
             if self.router.mode == 'splitter':
                 weight = self.router.config[i] if self.router.config else 0
-                label = f"[{direction}] Slot {i}:  weight = {self.input_text if self.editing_slot == i else weight}"
+                label = f"[{self.direction_text[direction]}] Slot {i}:  weight = {self.input_text if self.editing_slot == i else weight}"
             else:
                 rule = self.router.config[i] if self.router.config else 0
                 if rule == 0:
@@ -457,7 +472,7 @@ class RouterConfigWindow:
                 else:
                     display_rule = item_registry.get_display_name(rule).upper()
                     
-                label = f"[{direction}] Slot {i}:  {display_rule}"
+                label = f"[{self.direction_text[direction]}] Slot {i}:  {display_rule}"
 
             self.frame.draw_button(screen, rect, label,
                                    active=is_editing,

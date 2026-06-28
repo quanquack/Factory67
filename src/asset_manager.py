@@ -38,7 +38,7 @@ class AssetManager:
         b = (sum(ord(c) for c in name) * 73) % 200 + 55
         return (r, g, b)
 
-    def get_asset(self, name: str, filepath: str) -> pygame.Surface:
+    def get_asset(self, name: str, filepath: str, angle: int = 0) -> pygame.Surface:
         """
         Retrieve an asset from cache or load it from disk.
 
@@ -50,32 +50,39 @@ class AssetManager:
             filepath (str): Relative path to the asset file.
 
         Returns:
+           
             pygame.Surface: A surface scaled to the configured tile size and ready for rendering.
         """
-        if name in self.cache:
-            return self.cache[name]
+        cache_key = f"{name}_{angle}"
+        if cache_key in self.cache:
+            return self.cache[cache_key]
         
-        try:
-            if not os.path.exists(filepath):
-                raise FileNotFoundError(f"File {filepath} not exist")
+        base_key = f"{name}_0"
+        if base_key not in self.cache:
+            try:
+                if not os.path.exists(filepath):
+                    raise FileNotFoundError(f"File {filepath} not exist")
+                image = pygame.image.load(filepath).convert_alpha()
+                image = pygame.transform.scale(image, (self.tile_size, self.tile_size))
+                self.cache[base_key] = image
+            except (FileNotFoundError, pygame.error) as e:
+                print(f"[AssetManager] Missing '{name}'. Using fallback. ({e})")
+                fallback_surface = pygame.Surface((self.tile_size, self.tile_size))
+                color = self._generate_consistent_color(name)
+                fallback_surface.fill(color)
+                rect = fallback_surface.get_rect()
+                pygame.draw.rect(fallback_surface, (255, 255, 255), rect, 1)
+                
+                # Draw a red indicator facing North to verify rotation
+                pygame.draw.rect(fallback_surface, (255, 50, 50), (self.tile_size//2 - 2, 0, 4, 4))
+                self.cache[base_key] = fallback_surface
 
-            image = pygame.image.load(filepath).convert_alpha()
+        base_image = self.cache[base_key]
+        
+        # Rotate and cache the new oriented surface
+        if angle != 0:
+            rotated_image = pygame.transform.rotate(base_image, angle)
+            self.cache[cache_key] = rotated_image
+            return rotated_image
             
-            image = pygame.transform.scale(image, (self.tile_size, self.tile_size))
-            
-            self.cache[name] = image
-            return image
-            
-        except (FileNotFoundError, pygame.error) as e:
-            print(f"[AssetManager] Missing '{name}'. Using fallback. ({e})")
-            
-            fallback_surface = pygame.Surface((self.tile_size, self.tile_size))
-            
-            color = self._generate_consistent_color(name)
-            fallback_surface.fill(color)
-            
-            rect = fallback_surface.get_rect()
-            pygame.draw.rect(fallback_surface, (255, 255, 255), rect, 1)
-            
-            self.cache[name] = fallback_surface
-            return fallback_surface
+        return base_image
