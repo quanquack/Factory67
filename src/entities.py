@@ -515,8 +515,8 @@ class BaseBlock(ABC):
 
 
 @register_block('smelter')
-@register_block('bending_machine')
-@register_block('wire_drawer')
+@register_block('bender')
+@register_block('wiremill')
 @register_block('assembler')
 class Machine(BaseBlock):
     """

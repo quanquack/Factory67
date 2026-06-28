@@ -1,0 +1,10 @@
+{
+    "metadata": {
+        "base_speed": 60,
+        "upgrade_costs": [
+            {"iron_plate": 50, "copper_wire": 50},
+            {"iron_plate": 150, "circuit_board": 20},
+            {"iron_plate": 300, "engine": 10}
+        ]
+    }
+}

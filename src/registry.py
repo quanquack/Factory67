@@ -76,12 +76,12 @@ class MachineRegistry:
     def generate_ore_recipes(self, ore_configs: dict):
         product_templates = {
             "plate":  {
-                "machine": "bending_machine",
+                "machine": "bender",
                 "output": "{ore}_plate",
-                "ingredients": {"{ore}": 2}
+                "ingredients": {"{ore}": 1}
             },
             "wire": {
-                "machine": "wire_drawer",
+                "machine": "wiremill",
                 "output": "{ore}_wire",
                 "ingredients": {"{ore}": 1}
             },
