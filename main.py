@@ -92,6 +92,10 @@ def main():
                     if action == "new_game":
                         game_manager.game_map.chunks.clear()
                         game_manager.economy.money = 0
+
+                        game_manager.inventory.inventory.clear() 
+                        game_manager.inventory.unlocked_recipes.clear()
+
                         game_manager.game_map.spawn_fixed_hubs(
                             game_manager.inventory, 
                             game_manager.economy
@@ -132,6 +136,19 @@ def main():
             main_menu.draw(screen)
         elif current_state == "PLAYING":
             game_manager.update()
+            input_handler.update()
+            # --- VICTORY CHECK LOGIC ---
+            if not getattr(game_manager, 'victory_achieved', False):
+                robot_count = game_manager.inventory.inventory.get("robot", 0)
+                if robot_count >= 100:
+                    game_manager.victory_achieved = True
+                    
+                    # Deduct the required items for the final milestone
+                    game_manager.inventory.deduct_item({"robot": 100})
+                    
+                    # Command the UI to open the victory window
+                    input_handler.active_window = input_handler.windows['victory']
+                    input_handler.active_window.open()
             renderer.render_frame()
 
         clock.tick(60)

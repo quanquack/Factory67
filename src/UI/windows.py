@@ -587,3 +587,63 @@ class RecipeUnlockWindow:
             self.frame.draw_button(screen, rect, label,
                                    active=unlocked,
                                    hovered=(self.hovered == recipe_name) and not unlocked and can_afford)
+            
+
+class VictoryWindow:
+    def __init__(self, screen_w, screen_h):
+        self.frame = WindowFrame(screen_w, screen_h, 480, 280, "VICTORY!")
+        self.continue_rect = None
+        self.hovered = False
+
+    @property
+    def is_open(self):
+        return self.frame.is_open
+
+    def open(self):
+        self.frame.open()
+
+    def close(self):
+        self.frame.close()
+
+    def handle_event(self, event):
+        if self.frame.handle_close_click(event):
+            return True
+            
+        if event.type == pygame.MOUSEMOTION:
+            self.hovered = self.continue_rect is not None and self.continue_rect.collidepoint(event.pos)
+            
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.continue_rect and self.continue_rect.collidepoint(event.pos):
+                self.close()
+                return True
+        return False
+
+    def draw(self, screen):
+        self.frame.draw_frame(screen)
+        x = self.frame.x + self.frame.PADDING
+        y = self.frame.y + self.frame.HEADER_H + self.frame.PADDING + 10
+
+        text_lines = [
+            "CONGRATULATIONS, ENGINEER!",
+            "",
+            "You have successfully automated the production",
+            "and delivery of 100 high-tech robots.",
+            "Your factory is a masterpiece of logistics.",
+            "",
+            "You can stop now, or continue expanding your factory."
+        ]
+        
+        for line in text_lines:
+            if line.startswith("CONGRATULATIONS"):
+                surf = self.frame.font_title.render(line, True, (255, 215, 0))
+                screen.blit(surf, (self.frame.x + (self.frame.width - surf.get_width()) // 2, y))
+                y += 28
+            else:
+                surf = self.frame.font.render(line, True, COLORS["text"])
+                screen.blit(surf, (self.frame.x + (self.frame.width - surf.get_width()) // 2, y))
+                y += 20
+
+        y += 15
+        btn_w = 200
+        self.continue_rect = pygame.Rect(self.frame.x + (self.frame.width - btn_w) // 2, y, btn_w, self.frame.BTN_H)
+        self.frame.draw_button(screen, self.continue_rect, "CONTINUE PLAYING", active=False, hovered=self.hovered)

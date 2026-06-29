@@ -135,6 +135,7 @@ class GameManager:
         self.game_map = game_map
         self.economy = economy_manager
         self.inventory = player_inventory
+        self.victory_achieved = False
 
     def update(self):
         for chunk in self.game_map.chunks.values():
@@ -162,6 +163,7 @@ class SaveLoadManager:
         save_data = {
             "money": self.economy.money,
             "inventory": self.inventory.to_dict(),
+            "victory_achieved": getattr(self.game_manager, 'victory_achieved', False),
             "seed": self.game_map.generator.seed,
             "chunks": []
         }
@@ -197,7 +199,8 @@ class SaveLoadManager:
             return False
 
         self.economy.money = save_data.get("money", 0)
-        
+        self.game_manager.victory_achieved = save_data.get("victory_achieved", False)
+
         if "inventory" in save_data:
             self.inventory.from_dict(save_data["inventory"])
         

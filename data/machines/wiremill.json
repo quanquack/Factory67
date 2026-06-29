@@ -2,10 +2,16 @@
     "metadata": {
         "base_speed": 120,
         "require_selection": false,
+        "recipe_templates": {
+            "plate": {
+                "output": "{ore}_wire",
+                "ingredients": {"{ore}": 1}
+            }
+        },
         "upgrade_costs": [
-            {"iron_plate": 3},
-            {"iron_plate": 6, "copper_wire": 4},
-            {"iron_plate": 12, "copper_wire": 8, "gold_plate": 2}
+            {"iron_plate": 5, "copper_wire": 3},
+            {"iron_plate": 10, "circuit": 6, "gold_plate": 2},
+            {"battery": 20, "motor": 12, "smart_plating": 5}
         ]
     },
     "recipes": {}
