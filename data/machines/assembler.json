@@ -3,19 +3,27 @@
         "base_speed": 180,
         "require_selection": true,
         "upgrade_costs": [
-            {"iron_plate": 5, "copper_wire": 3},
-            {"iron_plate": 10, "copper_wire": 6, "gold_plate": 2},
-            {"iron_plate": 20, "copper_wire": 12, "gold_plate": 5}
+            {"iron_plate": 5, "copper_wire": 5},
+            {"iron_plate": 10, "circuit": 6, "gold_plate": 2},
+            {"battery": 20, "motor": 12, "smart_plating": 5}
         ],
         "recipe_unlock_costs": {
             "circuit": 500,
             "motor": 1200,
-            "battery": 1000
+            "battery": 1000,
+            "smart_plating": 2500,
+            "computer": 5000,
+            "drone": 8500,
+            "robot": 15000
         }
     },
     "recipes": {
-        "circuit": {"copper_wire": 3, "iron_plate": 1},
-        "motor": {"iron_wire": 4, "iron_plate": 2},
-        "battery": {"copper_wire": 2, "gold_plate": 1}
+        "circuit": {"copper_wire": 6, "iron_plate": 2},
+        "motor": {"iron_wire": 8, "iron_plate": 4},
+        "battery": {"copper_wire": 4, "gold_plate": 2, "aluminum_liquid": 3},
+        "smart_plating": {"iron_plate": 8, "circuit": 2},
+        "computer": {"circuit": 6, "gold_plate": 4, "copper_wire": 10},
+        "drone": {"motor": 4, "circuit": 4, "battery": 2},
+        "robot": {"motor": 8, "computer": 2, "smart_plating": 4}
     }
 }

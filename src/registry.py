@@ -74,43 +74,26 @@ class MachineRegistry:
         return self.machine_data.get(machine_type, {}).get("metadata", {})
     
     def generate_ore_recipes(self, ore_configs: dict):
-        product_templates = {
-            "plate":  {
-                "machine": "bender",
-                "output": "{ore}_plate",
-                "ingredients": {"{ore}": 1}
-            },
-            "wire": {
-                "machine": "wiremill",
-                "output": "{ore}_wire",
-                "ingredients": {"{ore}": 1}
-            },
-            "liquid": {
-                "machine": "smelter",
-                "output": "{ore}_liquid",
-                "ingredients": {"{ore}": 1}
-            }
-        }   
+        for machine, data in self.machine_data.items():
+            metadata = data.get("metadata", {})
+            templates = metadata.get("recipe_templates", {})
 
-        for ore_name, ore_config in ore_configs.items():
-            for product in ore_config.get("products", []):
-                if product not in product_templates:
-                    continue
+            if not templates:
+                continue
 
-                template = product_templates[product]
-                machine = template["machine"]
+            for ore_name, ore_config in ore_configs.items():
+                for product in ore_config.get("products", []):
+                    if product in templates:
+                        template = templates[product]
+                        output_name = template["output"].replace("{ore}", ore_name)
+                        
+                        ingredients = {
+                            k.replace("{ore}", ore_name): v
+                            for k, v in template["ingredients"].items()
+                        }
 
-                if machine not in self.machine_data:
-                    continue
-
-                output_name = template["output"].replace("{ore}", ore_name)
-                ingredients = {
-                    k.replace("{ore}", ore_name): v
-                    for k, v in template["ingredients"].items()
-                }
-
-                self.machine_data[machine].setdefault("recipes", {})
-                self.machine_data[machine]["recipes"][output_name] = ingredients
+                        self.machine_data[machine].setdefault("recipes", {})
+                        self.machine_data[machine]["recipes"][output_name] = ingredients
 
 
 class ItemRegistry:

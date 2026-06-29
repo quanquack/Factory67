@@ -1,7 +1,7 @@
 import pygame
 import src.entities
 from src.registry import ore_registry
-from src.UI.windows import MachineWindow, StorageWindow, RouterConfigWindow, RecipeUnlockWindow
+from src.UI.windows import MachineWindow, StorageWindow, RouterConfigWindow, RecipeUnlockWindow, VictoryWindow
 
 OPPOSITE_DIRS = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
 
@@ -134,7 +134,8 @@ class InputHandler:
             'machine': MachineWindow(camera.width, camera.height, game_manager),
             'storage': StorageWindow(camera.width, camera.height),
             'router': RouterConfigWindow(camera.width, camera.height),
-            'recipe_unlock': RecipeUnlockWindow(camera.width, camera.height, game_manager.economy)
+            'recipe_unlock': RecipeUnlockWindow(camera.width, camera.height, game_manager.economy),
+            'victory':VictoryWindow(camera.width, camera.height)
         }
         self.active_window = None
 
@@ -310,6 +311,8 @@ class InputHandler:
                     prev_block = self.game_manager.game_map.get_block_at(prev_x, prev_y)
                     if prev_block and type(prev_block).__name__ == 'Conveyor':
                         prev_block.output_dir = drag_dir
+                        if getattr(prev_block, 'input_dir', None) == drag_dir:
+                            prev_block.input_dir = OPPOSITE_DIRS[drag_dir]
                         if hasattr(prev_block, 'connection'):
                             prev_block.connection.update_outbound(self.game_manager.game_map)
 
@@ -365,6 +368,9 @@ class InputHandler:
         else:
             final_in_dir = OPPOSITE_DIRS[out_dir]
 
+        if final_in_dir == out_dir:
+            final_in_dir = OPPOSITE_DIRS[out_dir]
+
         context = {
             'game_map': self.game_manager.game_map,
             'economy': self.game_manager.economy,
@@ -374,8 +380,35 @@ class InputHandler:
             'tool': self.selected_tool
         }
         
-        from src.entities import spawn_entity
-        return spawn_entity(self.selected_tool, x, y, context)
+        return src.entities.spawn_entity(self.selected_tool, x, y, context)
+
+    def update(self):
+        """
+        Auto-pan camera when dragging at the edges of the screen.
+        """
+        if self.is_building or self.is_destroying:
+            mouse_x, mouse_y = pygame.mouse.get_pos()
+            edge_margin = 40 
+            pan_speed = 15.0
+            
+            dx = 0
+            dy = 0
+            
+            if mouse_x <= edge_margin: 
+                dx = pan_speed
+            elif mouse_x >= self.camera.width - edge_margin: 
+                dx = -pan_speed
+                
+            if mouse_y <= edge_margin: 
+                dy = pan_speed
+            elif mouse_y >= self.camera.height - edge_margin: 
+                dy = -pan_speed
+                
+            if dx != 0 or dy != 0:
+                self.camera.offset_x += dx
+                self.camera.offset_y += dy
+                
+                self.handle_mouse_motion(mouse_x, mouse_y)
 
 
 class UIRenderer:
@@ -526,6 +559,26 @@ class UIRenderer:
 
         if surface.get_width() != target_w or surface.get_height() != target_h:
             surface = pygame.transform.scale(surface, (target_w, target_h))
+
+        # if hasattr(entity, 'level'):
+        level = getattr(entity, 'level', 1)
+        
+        level_colors = {
+            1: (120, 125, 135), 
+            2: (205, 127, 50),  
+            3: (255, 215, 0),   
+            4: (0, 255, 255)    
+        }
+        bg_color = level_colors.get(level, (120, 125, 135))
+        bg_rect = pygame.Rect(pixel_x, pixel_y, target_w, target_h)
+        
+        if is_ghost:
+            s = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
+            s.fill((*bg_color, 100))
+            self.screen.blit(s, (pixel_x, pixel_y))
+        else:
+            pygame.draw.rect(self.screen, bg_color, bg_rect)
+            pygame.draw.rect(self.screen, (50, 55, 65), bg_rect, 2)
 
         if is_ghost:
             ghost_surface = surface.copy()
