@@ -229,7 +229,37 @@ class OreRegistry:
     def get_color(self, ore_name: str):
         color_list = self.ore_data.get(ore_name, {}).get("color", [255, 0, 255])
         return tuple(color_list)
+    
+class ThemeRegistry:
+    """
+    Centralized registry managing all color themes and UI styling from a JSON file.
+    """
+    def __init__(self):
+        self.theme_data = {}
+
+    def load_from_file(self, file_path: str):
+        """Loads the color theme configuration from a JSON file."""
+        if not os.path.exists(file_path):
+            print(f"Warning: Theme file {file_path} not found. Using defaults.")
+            return
+            
+        with open(file_path, 'r', encoding='utf-8') as f:
+            self.theme_data = json.load(f)
+
+    def get_color(self, category: str, key: str, default=(255, 255, 255)):
+        """Retrieves a specific RGB color tuple from a category."""
+        category_data = self.theme_data.get(category, {})
+        color_list = category_data.get(key, default)
+        return tuple(color_list)
+
+    def get_level_color(self, level: int):
+        """Retrieves the background color for a specific machine level."""
+        level_data = self.theme_data.get("levels", {})
+        color_list = level_data.get(str(level), [120, 125, 135])
+        return tuple(color_list)
+
 
 machine_registry = MachineRegistry()
 item_registry = ItemRegistry()
 ore_registry = OreRegistry()
+theme_registry = ThemeRegistry()

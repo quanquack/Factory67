@@ -1,18 +1,5 @@
 import pygame
-from src.registry import item_registry, machine_registry
-
-COLORS = {
-    "bg":          (20, 22, 26),
-    "border":      (75, 80, 95),
-    "header":      (30, 33, 40),
-    "button":      (50, 55, 68),
-    "button_hover":(70, 76, 92),
-    "button_active":(80, 120, 80),
-    "text":        (240, 240, 245),
-    "text_dim":    (150, 155, 165),
-    "close":       (160, 60, 60),
-    "close_hover": (200, 80, 80),
-}
+from src.registry import item_registry, machine_registry, theme_registry
 
 class WindowFrame:
     """Handles shared drawing and close button logic."""
@@ -58,36 +45,36 @@ class WindowFrame:
         return False
 
     def draw_frame(self, screen):
-        pygame.draw.rect(screen, COLORS["bg"], self.rect, border_radius=6)
-        pygame.draw.rect(screen, COLORS["border"], self.rect, 1, border_radius=6)
+        pygame.draw.rect(screen, theme_registry.get_color("windows","bg"), self.rect, border_radius=6)
+        pygame.draw.rect(screen, theme_registry.get_color("windows","border"), self.rect, 1, border_radius=6)
 
         header_rect = pygame.Rect(self.x, self.y, self.width, self.HEADER_H)
-        pygame.draw.rect(screen, COLORS["header"], header_rect,
+        pygame.draw.rect(screen, theme_registry.get_color("windows","header"), header_rect,
                          border_top_left_radius=6, border_top_right_radius=6)
 
-        title_surf = self.font_title.render(self.title, True, COLORS["text"])
+        title_surf = self.font_title.render(self.title, True, theme_registry.get_color("windows","text"))
         screen.blit(title_surf, (self.x + self.PADDING,
                                   self.y + (self.HEADER_H - title_surf.get_height()) // 2))
 
         mouse_pos = pygame.mouse.get_pos()
-        close_color = COLORS["close_hover"] if self.close_rect.collidepoint(mouse_pos) else COLORS["close"]
+        close_color = theme_registry.get_color("windows","close_hover") if self.close_rect.collidepoint(mouse_pos) else theme_registry.get_color("windows","close")
         pygame.draw.rect(screen, close_color, self.close_rect, border_radius=4)
-        x_surf = self.font_title.render("x", True, COLORS["text"])
+        x_surf = self.font_title.render("x", True, theme_registry.get_color("windows","text"))
         screen.blit(x_surf, (
             self.close_rect.centerx - x_surf.get_width() // 2,
             self.close_rect.centery - x_surf.get_height() // 2
         ))
 
     def draw_button(self, screen, rect, label, active=False, hovered=False):
-        color = COLORS["button_active"] if active else (COLORS["button_hover"] if hovered else COLORS["button"])
+        color = theme_registry.get_color("windows","button_active") if active else (theme_registry.get_color("windows","button_hover") if hovered else theme_registry.get_color("windows","button"))
         pygame.draw.rect(screen, color, rect, border_radius=4)
-        pygame.draw.rect(screen, COLORS["border"], rect, 1, border_radius=4)
-        surf = self.font.render(label, True, COLORS["text"])
+        pygame.draw.rect(screen, theme_registry.get_color("windows","border"), rect, 1, border_radius=4)
+        surf = self.font.render(label, True, theme_registry.get_color("windows","text"))
         screen.blit(surf, (rect.centerx - surf.get_width() // 2,
                            rect.centery - surf.get_height() // 2))
 
     def draw_label(self, screen, text, x, y, dim=False):
-        color = COLORS["text_dim"] if dim else COLORS["text"]
+        color = theme_registry.get_color("windows","text_dim") if dim else theme_registry.get_color("windows","text")
         surf = self.font.render(text, True, color)
         screen.blit(surf, (x, y))
         return surf.get_height()
@@ -481,8 +468,8 @@ class RouterConfigWindow:
         if self.dropdown_open:
             dd_rect = self._get_dropdown_rect()
             
-            pygame.draw.rect(screen, COLORS["bg"], dd_rect, border_radius=4)
-            pygame.draw.rect(screen, COLORS["border"], dd_rect, 1, border_radius=4)
+            pygame.draw.rect(screen, theme_registry.get_color("windows","bg"), dd_rect, border_radius=4)
+            pygame.draw.rect(screen, theme_registry.get_color("windows","border"), dd_rect, 1, border_radius=4)
             
             for i in range(self.dropdown_visible_items):
                 idx = self.dropdown_scroll + i
@@ -639,7 +626,7 @@ class VictoryWindow:
                 screen.blit(surf, (self.frame.x + (self.frame.width - surf.get_width()) // 2, y))
                 y += 28
             else:
-                surf = self.frame.font.render(line, True, COLORS["text"])
+                surf = self.frame.font.render(line, True, theme_registry.get_color("windows","text"))
                 screen.blit(surf, (self.frame.x + (self.frame.width - surf.get_width()) // 2, y))
                 y += 20
 
