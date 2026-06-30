@@ -1,6 +1,6 @@
 import pygame
 import src.entities
-from src.registry import ore_registry
+from src.registry import ore_registry, machine_registry, theme_registry
 from src.UI.windows import MachineWindow, StorageWindow, RouterConfigWindow, RecipeUnlockWindow, VictoryWindow
 
 OPPOSITE_DIRS = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
@@ -103,10 +103,11 @@ class InputHandler:
         self.game_manager = game_manager
         self.camera = camera
         self.tile_size = tile_size
+        machine_tools = list(machine_registry.machine_data.keys())
 
         self.tool_groups = [
             ['miner'],
-            ['smelter', 'bender', 'wiremill', 'assembler'],
+            machine_tools,
             ['conveyor'],
             ['merger'],
             ['splitter', 'filter']
@@ -386,7 +387,7 @@ class InputHandler:
         """
         Auto-pan camera when dragging at the edges of the screen.
         """
-        if self.is_building or self.is_destroying:
+        if self.is_building:
             mouse_x, mouse_y = pygame.mouse.get_pos()
             edge_margin = 40 
             pan_speed = 15.0
@@ -434,7 +435,7 @@ class UIRenderer:
         self.input_handler = input_handler 
         self.tile_size = tile_size
         self.camera = camera
-        self.bg_color = (30, 32, 40) 
+        self.bg_color = theme_registry.get_color("render", "bg")
         self.font = pygame.font.SysFont("Arial", 16, bold=True)
         self.chunk_surfaces = {}
         self.direction_text = {'N': '↑', 'S': '↓', 'E': '→', 'W': '←'}
@@ -511,7 +512,7 @@ class UIRenderer:
         This helps visualize tile alignment and placement.
         """
         min_x, max_x, min_y, max_y = self.camera.get_visible_bounds()
-        grid_color = (42, 45, 54) 
+        grid_color = theme_registry.get_color("render", "grid")
 
         for grid_x in range(min_x, max_x + 1):
             start_x, _ = self.camera.world_to_screen(grid_x, 0)
@@ -562,14 +563,10 @@ class UIRenderer:
 
         # if hasattr(entity, 'level'):
         level = getattr(entity, 'level', 1)
+
+        bg_color = theme_registry.get_level_color(level)
+        machine_border = theme_registry.get_color("render", "machine_border")
         
-        level_colors = {
-            1: (120, 125, 135), 
-            2: (205, 127, 50),  
-            3: (255, 215, 0),   
-            4: (0, 255, 255)    
-        }
-        bg_color = level_colors.get(level, (120, 125, 135))
         bg_rect = pygame.Rect(pixel_x, pixel_y, target_w, target_h)
         
         if is_ghost:
@@ -578,7 +575,7 @@ class UIRenderer:
             self.screen.blit(s, (pixel_x, pixel_y))
         else:
             pygame.draw.rect(self.screen, bg_color, bg_rect)
-            pygame.draw.rect(self.screen, (50, 55, 65), bg_rect, 2)
+            pygame.draw.rect(self.screen, machine_border, bg_rect, 2)
 
         if is_ghost:
             ghost_surface = surface.copy()
@@ -698,19 +695,23 @@ class UIRenderer:
         """
         Render the heads-up display (HUD) showing current tool, direction, and player money.
         """
+        hud_bg = theme_registry.get_color("render", "hud_bg")
+        hud_border = theme_registry.get_color("render", "hud_border")
+        hud_text_color = theme_registry.get_color("render", "hud_text")
+
         tool = self.input_handler.selected_tool.upper()
         direction = self.input_handler.current_direction
         money = self.game_manager.economy.money if self.game_manager.economy else 0
         mode = self.input_handler.interaction_mode
 
         hud_text = f" MODE: {mode} (Q)   |   [1-{len(self.input_handler.tool_groups)}] TOOL: {tool}   |   [R] ROTATION: {self.direction_text[direction]}   |   CASH: ${money}"
-        text_surface = self.font.render(hud_text, True, (240, 240, 245))
+        text_surface = self.font.render(hud_text, True, hud_text_color)
         
         padding = 10
         hud_rect = pygame.Rect(12, 12, text_surface.get_width() + padding*2, text_surface.get_height() + padding)
         
-        pygame.draw.rect(self.screen, (20, 22, 26), hud_rect)
-        pygame.draw.rect(self.screen, (75, 80, 95), hud_rect, 1)
+        pygame.draw.rect(self.screen, hud_bg, hud_rect)
+        pygame.draw.rect(self.screen, hud_border, hud_rect, 1)
         self.screen.blit(text_surface, (12 + padding, 12 + padding // 2))
 
     def _draw_hover_info(self):
@@ -718,6 +719,10 @@ class UIRenderer:
         Render a dynamic tooltip panel at the bottom right of the screen
         showing information about the currently hovered tile.
         """
+        hud_bg = theme_registry.get_color("render", "hud_bg")
+        hud_border = theme_registry.get_color("render", "hud_border")
+        hud_text = theme_registry.get_color("render", "hud_text")
+
         grid_x, grid_y = self.input_handler.hovered_grid
         entity = self.game_manager.game_map.get_block_at(grid_x, grid_y)
         info_lines = [f"({grid_x}, {grid_y})"]
@@ -747,7 +752,7 @@ class UIRenderer:
             else:
                 info_lines.append("GROUND: EMPTY")
 
-        rendered_lines = [self.font.render(line, True, (240, 240, 245)) for line in info_lines]
+        rendered_lines = [self.font.render(line, True, hud_text) for line in info_lines]
         
         padding = 12
         line_height = self.font.get_linesize() + 4
@@ -760,8 +765,8 @@ class UIRenderer:
         box_y = self.camera.height - box_height - 20
         
         hud_rect = pygame.Rect(box_x, box_y, box_width, box_height)
-        pygame.draw.rect(self.screen, (20, 22, 26), hud_rect)
-        pygame.draw.rect(self.screen, (75, 80, 95), hud_rect, 1)
+        pygame.draw.rect(self.screen, hud_bg, hud_rect)
+        pygame.draw.rect(self.screen, hud_border, hud_rect, 1)
         
         for i, surf in enumerate(rendered_lines):
             self.screen.blit(surf, (box_x + padding, box_y + padding + i * line_height))
@@ -824,6 +829,7 @@ class UIRenderer:
             (base_x - px * arrow_half_width, base_y - py * arrow_half_width),
         ]
 
+        arrow_color = theme_registry.get_color("render", "indicator_arrow")
         arrow_surface = pygame.Surface((self.camera.width, self.camera.height), pygame.SRCALPHA)
-        pygame.draw.polygon(arrow_surface, (255, 255, 255, 80), points)
+        pygame.draw.polygon(arrow_surface, arrow_color, points)
         self.screen.blit(arrow_surface, (0, 0))

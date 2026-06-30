@@ -1,4 +1,5 @@
 import pygame
+from src.registry import theme_registry
 
 class MainMenu:
     """
@@ -19,10 +20,14 @@ class MainMenu:
         self.button_font = pygame.font.SysFont("Arial", 32, bold=True)
         
         # Colors
-        self.bg_color = (20, 22, 26)       
-        self.btn_color = (50, 54, 63)      
-        self.btn_hover_color = (75, 80, 95)
-        self.text_color = (240, 240, 245)
+        self.bg_color = theme_registry.get_color("menu", "bg")
+        self.btn_color = theme_registry.get_color("menu", "btn")
+        self.btn_hover_color = theme_registry.get_color("menu", "btn_hover")
+        self.text_color = theme_registry.get_color("menu", "text")
+        self.title_color = theme_registry.get_color("menu", "title")
+        self.shadow_color = theme_registry.get_color("menu", "title_shadow")
+        self.panel_bg = theme_registry.get_color("menu", "panel_bg")
+        self.panel_border = theme_registry.get_color("menu", "panel_border")
         
         # Button layout setup
         btn_width = 300
@@ -68,12 +73,12 @@ class MainMenu:
 
         if self.show_tutorial:
             panel_rect = pygame.Rect(self.width // 2 - 380, 40, 760, self.height - 150)
-            pygame.draw.rect(screen, (30, 33, 40), panel_rect, border_radius=12)
-            pygame.draw.rect(screen, (75, 80, 95), panel_rect, 2, border_radius=12)
+            pygame.draw.rect(screen, self.panel_bg, panel_rect, border_radius=12)
+            pygame.draw.rect(screen, self.panel_border, panel_rect, 2, border_radius=12)
             
             y_offset = 70
             for line in self.tutorial_lines:
-                color = (255, 215, 0) if line == "WELCOME TO THE FACTORY" else self.text_color
+                color = self.title_color if line == "WELCOME TO THE FACTORY" else self.text_color
                 text_surf = self.tutorial_font.render(line, True, color)
                 screen.blit(text_surf, (self.width // 2 - text_surf.get_width() // 2, y_offset))
                 y_offset += 40
@@ -89,9 +94,8 @@ class MainMenu:
             screen.blit(back_surf, back_surf.get_rect(center=self.back_btn_rect.center))
         else:
             # Draw title
-            title_surf = self.title_font.render("FACTORY 67", True, (255, 215, 0)) # Màu vàng Gold
+            title_surf = self.title_font.render("FACTORY 67", True, self.title_color)
             title_rect = title_surf.get_rect(center=(self.width // 2, self.height // 4))
-            screen.blit(title_surf, title_rect)
             
             # Draw shadow for depth effect  
             shadow_surf = self.title_font.render("FACTORY 67", True, (0, 0, 0))

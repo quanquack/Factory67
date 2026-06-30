@@ -467,6 +467,32 @@ class ConnectionComponent:
         self._ping_adj(game_map)
 
 
+class UpgradeComponent:
+    """
+    Component handling the level-up logic for upgradable entities.
+    """
+    def __init__(self, owner, registry_key):
+        self.owner = owner
+        self.registry_key = registry_key
+
+    def process_upgrade(self, player_inventory) -> bool:
+        from src.registry import machine_registry
+        
+        metadata = machine_registry.get_metadata(self.registry_key)
+        costs = metadata.get("upgrade_costs", [])
+        max_level = len(costs) + 1
+        
+        if self.owner.level >= max_level:
+            return False
+        
+        cost = costs[self.owner.level - 1]
+        if player_inventory.deduct_item(cost):
+            self.owner.level += 1
+            return True
+            
+        return False
+    
+
 class TransportedItem:
     """
     Represents an item currently being transported on a conveyor.
@@ -563,6 +589,7 @@ class Machine(BaseBlock):
         self.output.owner = self
         self.input.owner = self
         self.connection = ConnectionComponent(self)
+        self.upgrade_component = UpgradeComponent(self, self.machine_type)
 
         self.is_processing = False
         self.processing_timer = 0.0
@@ -671,31 +698,7 @@ class Machine(BaseBlock):
         return flag
 
     def upgrade(self, player_inventory):
-        """
-        Upgrades the machine to the next level by deducting required items.
-
-        Parameters
-        ----------
-        player_inventory : object
-            The inventory of the player making the upgrade.
-
-        Returns
-        -------
-        bool
-            True if the machine was upgraded successfully, False otherwise.
-        """
-        if self.level >= 4:
-            return False
-        
-        costs = machine_registry.get_metadata(self.machine_type).get("upgrade_costs", [])
-        cost = costs[self.level - 1]
-        
-        flag = player_inventory.deduct_item(cost)
-        
-        if flag:
-            self.level += 1
-
-        return flag
+        return self.upgrade_component.process_upgrade(player_inventory)
     
     def get_outbound_ports(self):
         return {self.output_dir: self.output}
@@ -776,6 +779,7 @@ class Miner(BaseBlock):
         self.output = OutputComponent(self) if output_component is None else output_component
         self.output.owner = self
         self.connection = ConnectionComponent(self)
+        self.upgrade_component = UpgradeComponent(self, "miner")
 
         self.processing_timer = self.base_speed
         self.is_jammed = False
@@ -801,33 +805,7 @@ class Miner(BaseBlock):
             return
 
     def upgrade(self, player_inventory):
-        """
-        Upgrades the miner to significantly its generation speed.
-
-        Parameters
-        ----------
-        player_inventory : object
-            The player's main inventory to deduct upgrade costs from.
-
-        Returns
-        -------
-        bool
-            True if the upgrade was successful, False otherwise.
-        """
-        if self.level >= 4:
-            return False
-        
-        metadata = machine_registry.get_metadata("miner")
-        costs = metadata.get("upgrade_costs", [])
-        
-        if self.level - 1 < len(costs):
-            cost = costs[self.level - 1]
-            flag = player_inventory.deduct_item(cost)
-            if flag:
-                self.level += 1
-            return flag
-            
-        return False
+        return self.upgrade_component.process_upgrade(player_inventory)
 
     def get_outbound_ports(self):
         return {self.output_dir: self.output}
