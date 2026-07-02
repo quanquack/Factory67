@@ -9,6 +9,9 @@ class Economy:
     """
     def __init__(self):
         self.money = 0
+        self.total_earned = 0
+        self.last_total_earned = 0
+        self.money_rate = 0
 
     def add_money(self, amount: int):
         """
@@ -53,6 +56,9 @@ class Inventory:
     def __init__(self):
         self.inventory = {}
         self.unlocked_recipes = []
+        self.total_stored = {}
+        self.last_total_stored = {}
+        self.item_rates = {}
 
     def add_item(self, item_type: str, amount: int):
         """

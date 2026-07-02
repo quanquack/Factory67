@@ -1,7 +1,7 @@
 import pygame
 import src.entities
 from src.registry import ore_registry, machine_registry, theme_registry
-from src.UI.windows import MachineWindow, StorageWindow, RouterConfigWindow, RecipeUnlockWindow, VictoryWindow
+from src.UI.windows import MachineWindow, StorageWindow, RouterConfigWindow, RecipeUnlockWindow, VictoryWindow, StatisticsWindow
 
 OPPOSITE_DIRS = {'N': 'S', 'E': 'W', 'S': 'N', 'W': 'E'}
 
@@ -136,7 +136,8 @@ class InputHandler:
             'storage': StorageWindow(camera.width, camera.height),
             'router': RouterConfigWindow(camera.width, camera.height),
             'recipe_unlock': RecipeUnlockWindow(camera.width, camera.height, game_manager.economy),
-            'victory':VictoryWindow(camera.width, camera.height)
+            'victory':VictoryWindow(camera.width, camera.height),
+            'statistics': StatisticsWindow(camera.width, camera.height, game_manager)
         }
         self.active_window = None
 
@@ -160,6 +161,15 @@ class InputHandler:
         Args:
             key (int): The key code from the input event (e.g., pygame key constant).
         """
+
+        # --- DEBUG CODE---
+        # if key == pygame.K_F9:
+        #     self.game_manager.inventory.total_stored['robot'] = 9999
+            
+        #     self.game_manager.inventory.item_rates['robot'] = 150.0
+        #     return
+        # -----------------------------------------------------------------
+
         if self.active_window and self.active_window.is_open:
             return
         
@@ -178,6 +188,9 @@ class InputHandler:
         elif key == pygame.K_b:
             self.active_window = self.windows['recipe_unlock']
             self.active_window.open(self.game_manager.inventory)
+        elif key == pygame.K_t:
+            self.active_window = self.windows['statistics']
+            self.active_window.open()
 
     def handle_zoom(self, y_scroll, mouse_x, mouse_y):
         """
