@@ -1,6 +1,6 @@
 {
     "metadata": {
-        "base_speed": 60,
+        "base_speed": 120,
         "upgrade_costs": [
             {"gold_plate": 5, "copper_wire": 5},
             {"gold_plate": 10, "iron_plate": 2, "circuit": 6},

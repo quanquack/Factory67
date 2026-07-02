@@ -78,7 +78,8 @@ class WindowFrame:
         surf = self.font.render(text, True, color)
         screen.blit(surf, (x, y))
         return surf.get_height()
-    
+
+
 class MachineWindow:
     def __init__(self, screen_w, screen_h, game_manager):
         self.frame = WindowFrame(screen_w, screen_h, 420, 480, "MACHINE STATUS")
@@ -614,7 +615,7 @@ class VictoryWindow:
             "CONGRATULATIONS, ENGINEER!",
             "",
             "You have successfully automated the production",
-            "and delivery of 100 high-tech robots.",
+            "and achived the rate of 10 robots produced per second.",
             "Your factory is a masterpiece of logistics.",
             "",
             "You can stop now, or continue expanding your factory."
@@ -634,3 +635,64 @@ class VictoryWindow:
         btn_w = 200
         self.continue_rect = pygame.Rect(self.frame.x + (self.frame.width - btn_w) // 2, y, btn_w, self.frame.BTN_H)
         self.frame.draw_button(screen, self.continue_rect, "CONTINUE PLAYING", active=False, hovered=self.hovered)
+
+
+class StatisticsWindow:
+    def __init__(self, screen_w, screen_h, game_manager):
+        self.frame = WindowFrame(screen_w, screen_h, 380, 500, "FACTORY STATISTICS")
+        self.game_manager = game_manager
+        self.scroll = 0
+
+    @property
+    def is_open(self):
+        return self.frame.is_open
+
+    def open(self):
+        self.scroll = 0
+        self.frame.open()
+
+    def close(self):
+        self.frame.close()
+
+    def handle_event(self, event):
+        if self.frame.handle_close_click(event):
+            return True
+        if event.type == pygame.MOUSEWHEEL:
+            self.scroll = max(0, min(self.scroll - event.y, 50)) 
+            return True
+        return False
+    
+    def draw(self, screen):
+        self.frame.draw_frame(screen)
+        x = self.frame.x + self.frame.PADDING
+        y = self.frame.y + self.frame.HEADER_H + self.frame.PADDING
+
+        money_rate = getattr(self.game_manager.economy, 'money_rate', 0.0)
+        self.frame.draw_label(screen, f"Income Rate: ${money_rate:.1f} / sec", x, y)
+        y += 30
+        
+        pygame.draw.line(screen, theme_registry.get_color("windows", "border"), (x, y), (self.frame.x + self.frame.width - self.frame.PADDING, y))
+        y += 15
+        
+        self.frame.draw_label(screen, "Storage Input Rates (items/sec):", x, y, dim=True)
+        y += 25
+
+        stored_items = getattr(self.game_manager.inventory, 'total_stored', {})
+        rates = getattr(self.game_manager.inventory, 'item_rates', {})
+        
+        display_list = []
+        for item in stored_items.keys():
+            rate = rates.get(item, 0.0)
+            display_list.append((item, rate))
+        
+        display_list.sort(key=lambda item_rate: item_rate[1], reverse=True)
+
+        if not display_list:
+            self.frame.draw_label(screen, "No items in storage", x, y, dim=True)
+        else:
+            for item_name, rate in display_list[self.scroll:]:
+                if y + 20 > self.frame.y + self.frame.height - self.frame.PADDING:
+                    break
+                display = item_registry.get_display_name(item_name)
+                self.frame.draw_label(screen, f"{display}:  {rate:.1f}/s", x, y)
+                y += 22

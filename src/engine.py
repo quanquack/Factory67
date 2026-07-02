@@ -137,6 +137,8 @@ class GameManager:
         self.inventory = player_inventory
         self.victory_achieved = False
 
+        self.tick_counter = 0
+
     def update(self):
         for chunk in self.game_map.chunks.values():
             if not chunk.is_modified:
@@ -144,6 +146,21 @@ class GameManager:
             for entity in chunk.grid.values():
                 if hasattr(entity, 'process_tick'):
                     entity.process_tick()
+
+        self.tick_counter += 1
+        if self.tick_counter >= 60:
+            current_money_rate = self.economy.total_earned - self.economy.last_total_earned
+            self.economy.money_rate = getattr(self.economy, 'money_rate', 0.0) * 0.8 + current_money_rate * 0.2
+            self.economy.last_total_earned = self.economy.total_earned
+
+            for item, count in self.inventory.total_stored.items():
+                current_item_rate = count - self.inventory.last_total_stored.get(item, 0)
+                old_rate = self.inventory.item_rates.get(item, 0.0)
+                
+                self.inventory.item_rates[item] = old_rate * 0.8 + current_item_rate * 0.2
+                self.inventory.last_total_stored[item] = count
+
+            self.tick_counter = 0
 
 class SaveLoadManager:
     """ 

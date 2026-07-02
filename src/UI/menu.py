@@ -55,8 +55,8 @@ class MainMenu:
             "- Processing: Press 2 to cycle Smelters/Assemblers. Click them to set recipes.",
             "- Traffic: Press 4 for Mergers, 5 for Routers (Filters/Splitters).",
             "- Economy: Route items to Seller to earn cash, or Storage to keep them.",
-            "- Hotkeys: Press R to rotate. Press ESC to pause and save."
-            "- Make and store 100 robots in your storage to win the game."
+            "- Hotkeys: Press R to rotate, B to open recipe unlock shop, T to open statistic page, ESC to pause and save."
+            "- Make and achive 10 robot stored per second to win the game."
         ]
         self.back_btn_rect = pygame.Rect(self.width // 2 - 100, self.height - 90, 200, 50)
 

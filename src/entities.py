@@ -1399,6 +1399,10 @@ class Seller(BaseBlock):
             total += price
 
         self.economy.add_money(total)
+
+        if hasattr(self.economy, 'total_earned'):
+            self.economy.total_earned += total
+
         self.input_buffer.clear()
 
     def get_outbound_ports(self):
@@ -1493,6 +1497,8 @@ class CentralStorage(BaseBlock):
             return
         for item in self.input_buffer:
             self.inventory.add_item(item, 1)
+            if hasattr(self.inventory, 'total_stored'):
+                self.inventory.total_stored[item] = self.inventory.total_stored.get(item, 0) + 1
         self.input_buffer.clear()
 
     def get_outbound_ports(self):
