@@ -103,7 +103,7 @@ class InputHandler:
         self.game_manager = game_manager
         self.camera = camera
         self.tile_size = tile_size
-        machine_tools = list(machine_registry.machine_data.keys())
+        machine_tools = [name for name, cls in src.entities.BLOCK_REGISTRY.items() if cls is src.entities.Machine]
 
         self.tool_groups = [
             ['miner'],
@@ -207,7 +207,7 @@ class InputHandler:
         if y_scroll > 0:
             new_zoom = min(6.0, self.camera.zoom * zoom_factor)
         elif y_scroll < 0:
-            new_zoom = max(0.8, self.camera.zoom / zoom_factor)
+            new_zoom = max(1.0, self.camera.zoom / zoom_factor)
         else:
             return
 
@@ -452,6 +452,8 @@ class UIRenderer:
         self.font = pygame.font.SysFont("Arial", 16, bold=True)
         self.chunk_surfaces = {}
         self.direction_text = {'N': '↑', 'S': '↓', 'E': '→', 'W': '←'}
+        self.scaled_cache = {}
+        self.last_zoom = self.camera.zoom
 
     def _get_chunk_surface(self, cx, cy):
         if (cx, cy) in self.chunk_surfaces:
@@ -479,12 +481,16 @@ class UIRenderer:
         self.chunk_surfaces[(cx, cy)] = surface
         return surface
         
-    def render_frame(self):
+    def render_frame(self, fps=0):
         """
         Render a complete frame, including background, grid, entities, ghost previews, and HUD.
 
         This is the main rendering pipeline executed each frame.
         """
+        if self.camera.zoom != self.last_zoom:
+            self.scaled_cache.clear()
+            self.last_zoom = self.camera.zoom
+
         self.screen.fill(self.bg_color)
         self._draw_ores()
         self._draw_grid_lines()
@@ -509,12 +515,12 @@ class UIRenderer:
                     rendered_entities.add(entity)
 
         self._draw_ghost_block()
-        self._draw_hud()
+        self._draw_hud(fps)
         self._draw_hover_info()
         self._draw_origin_indicator()
 
         if self.input_handler.active_window and self.input_handler.active_window.is_open:
-            self.input_handler.active_window.draw(self.screen)
+            self.input_handler.active_window.draw(self.screen, self.asset_manager)
             
         pygame.display.flip()
 
@@ -572,7 +578,12 @@ class UIRenderer:
         target_h = current_size * height_tiles
 
         if surface.get_width() != target_w or surface.get_height() != target_h:
-            surface = pygame.transform.scale(surface, (target_w, target_h))
+            cache_key = (f"ent_{machine_name}_{angle}", target_w, target_h)
+            
+            if cache_key not in self.scaled_cache:
+                self.scaled_cache[cache_key] = pygame.transform.scale(surface, (target_w, target_h))
+            
+            surface = self.scaled_cache[cache_key]
 
         # if hasattr(entity, 'level'):
         level = getattr(entity, 'level', 1)
@@ -619,7 +630,12 @@ class UIRenderer:
                 
                 if target_width > 0 and target_height > 0:
                     if self.camera.zoom != 1.0:
-                        scaled_surface = pygame.transform.scale(base_surface, (target_width, target_height))
+                        cache_key = (id(base_surface), target_width, target_height)
+                        
+                        if cache_key not in self.scaled_cache:
+                            self.scaled_cache[cache_key] = pygame.transform.scale(base_surface, (target_width, target_height))
+                        
+                        scaled_surface = self.scaled_cache[cache_key]
                     else:
                         scaled_surface = base_surface
                         
@@ -673,7 +689,12 @@ class UIRenderer:
             item_surface = self.asset_manager.get_asset(item.item_name, filepath)
 
             if item_surface.get_width() != item_size:
-                item_surface = pygame.transform.scale(item_surface, (item_size, item_size))
+                cache_key = (f"item_{item.item_name}", item_size, item_size)
+                
+                if cache_key not in self.scaled_cache:
+                    self.scaled_cache[cache_key] = pygame.transform.scale(item_surface, (item_size, item_size))
+                
+                item_surface = self.scaled_cache[cache_key]
 
             render_x = item_x - item_size / 2
             render_y = item_y - item_size / 2
@@ -704,7 +725,7 @@ class UIRenderer:
             
             self.screen.blit(highlight, (pixel_x, pixel_y))
 
-    def _draw_hud(self):
+    def _draw_hud(self, fps=0):
         """
         Render the heads-up display (HUD) showing current tool, direction, and player money.
         """
@@ -717,15 +738,20 @@ class UIRenderer:
         money = self.game_manager.economy.money if self.game_manager.economy else 0
         mode = self.input_handler.interaction_mode
 
-        hud_text = f" MODE: {mode} (Q)   |   [1-{len(self.input_handler.tool_groups)}] TOOL: {tool}   |   [R] ROTATION: {self.direction_text[direction]}   |   CASH: ${money}"
+        fps_text =f" FPS: {int(fps)}"
+        fps_text_surface = self.font.render(fps_text, True, hud_text_color)
+        self.screen.blit(fps_text_surface, (12, 10))
+
+        hud_text = f"MODE: {mode} (Q)   |   [1-{len(self.input_handler.tool_groups)}] TOOL: {tool}    |   CASH: ${money}"
         text_surface = self.font.render(hud_text, True, hud_text_color)
         
         padding = 10
-        hud_rect = pygame.Rect(12, 12, text_surface.get_width() + padding*2, text_surface.get_height() + padding)
+        delta_y = 24
+        hud_rect = pygame.Rect(12, 12 + delta_y, text_surface.get_width() + padding*2, text_surface.get_height() + padding)
         
         pygame.draw.rect(self.screen, hud_bg, hud_rect)
         pygame.draw.rect(self.screen, hud_border, hud_rect, 1)
-        self.screen.blit(text_surface, (12 + padding, 12 + padding // 2))
+        self.screen.blit(text_surface, (12 + padding, 12 + padding // 2 + delta_y))
 
     def _draw_hover_info(self):
         """
