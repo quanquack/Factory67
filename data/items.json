@@ -1,5 +1,9 @@
 {
     "circuit": {"display_name": "Circuit", "price": 60, "image": "assets/circuit.png"},
     "motor": {"display_name": "Motor", "price": 80, "image": "assets/motor.png"},
-    "battery": {"display_name": "Battery", "price": 75, "image": "assets/battery.png"}
+    "battery": {"display_name": "Battery", "price": 75, "image": "assets/battery.png"},
+    "smart_plating": {"display_name": "Smart Plating", "price": 200, "image": "assets/smart_plating.png"},
+    "computer": {"display_name": "Computer", "price": 500, "image": "assets/computer.png"},
+    "drone": {"display_name": "Drone", "price": 500, "image": "assets/drone.png"},
+    "robot": {"display_name": "Robot", "price": 2000, "image": "assets/robot.png"}
 }

@@ -43,8 +43,9 @@ def main():
     """
 
     pygame.init()
-    screen_width, screen_height = 1280, 720
-    screen = pygame.display.set_mode((screen_width, screen_height))
+    screen_width, screen_height = 1920, 1080
+    screen = pygame.display.set_mode((screen_width, screen_height), pygame.SCALED)
+    is_fullscreen = False
     pygame.display.set_caption("Factory67")
     clock = pygame.time.Clock()
     pygame.key.set_repeat(400, 50)
@@ -73,6 +74,7 @@ def main():
 
     #"MENU" and "PLAYING"
     current_state = "MENU" 
+    last_toggle_tick = 0
 
     running = True
     while running:
@@ -82,6 +84,21 @@ def main():
                     save_manager.save_game(save_file_path)
                     print("[System] Automatically saved!")
                 running = False
+
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_F11:
+                    current_time = pygame.time.get_ticks()
+                    
+                    if current_time - last_toggle_tick > 500:
+                        is_fullscreen = not is_fullscreen
+                        if is_fullscreen:
+                            screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN | pygame.SCALED)
+                        else:
+                            screen = pygame.display.set_mode((screen_width, screen_height), pygame.SCALED)
+                        
+                        last_toggle_tick = current_time
+                        
+                        pygame.event.clear()
 
             if input_handler.handle_window_event(event):
                 continue
@@ -149,7 +166,7 @@ def main():
                     input_handler.active_window.open()
             # ---------------------------
             
-            renderer.render_frame()
+            renderer.render_frame(clock.get_fps())
 
         clock.tick(60)
 
