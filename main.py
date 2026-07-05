@@ -43,8 +43,14 @@ def main():
     """
 
     pygame.init()
+
+    info = pygame.display.Info()
+    flags = pygame.SCALED | pygame.RESIZABLE
+    if info.current_h <= 1080:
+        flags |= pygame.FULLSCREEN
+
     screen_width, screen_height = 1920, 1080
-    screen = pygame.display.set_mode((screen_width, screen_height), pygame.SCALED)
+    screen = pygame.display.set_mode((screen_width, screen_height), flags)
     is_fullscreen = False
     pygame.display.set_caption("Factory67")
     clock = pygame.time.Clock()
