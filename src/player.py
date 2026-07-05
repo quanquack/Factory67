@@ -44,6 +44,7 @@ class Economy:
         
         return False
 
+
 class Inventory:
     """
     Main hub inventory for storing special upgrade items globally.
@@ -112,6 +113,7 @@ class Inventory:
     def from_dict(self, data):
         self.inventory = data.get("items", {})
         self.unlocked_recipes = data.get("unlocked_recipes", [])
+
 
 class RecipeManager:
     """

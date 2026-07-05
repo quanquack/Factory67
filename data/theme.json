@@ -37,6 +37,7 @@
         "hud_border": [75, 80, 95],
         "hud_text": [240, 240, 245],
         "machine_border": [50, 55, 65],
-        "indicator_arrow": [255, 255, 255, 80]
+        "indicator_arrow": [255, 255, 255, 80],
+        "cash_color": [46, 204, 113] 
     }
 }

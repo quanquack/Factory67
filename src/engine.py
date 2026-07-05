@@ -33,6 +33,7 @@ class MapGenerator:
                 return ore_name
         return None
 
+
 class GameMap:
     def __init__(self, chunk_size=16, seed=None):
         self.chunk_size = chunk_size
@@ -130,6 +131,7 @@ class GameMap:
     def get_ore_at(self, x_pos, y_pos):
         return self.generator.get_ore_at(x_pos, y_pos)
 
+
 class GameManager:
     def __init__(self, game_map, economy_manager, player_inventory):
         self.game_map = game_map
@@ -161,6 +163,7 @@ class GameManager:
                 self.inventory.last_total_stored[item] = count
 
             self.tick_counter = 0
+
 
 class SaveLoadManager:
     """ 

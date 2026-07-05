@@ -1,5 +1,6 @@
 import pygame
 import src.entities
+from src.utils import format_number
 from src.registry import ore_registry, machine_registry, theme_registry
 from src.UI.windows import MachineWindow, StorageWindow, RouterConfigWindow, RecipeUnlockWindow, VictoryWindow, StatisticsWindow
 
@@ -449,11 +450,13 @@ class UIRenderer:
         self.tile_size = tile_size
         self.camera = camera
         self.bg_color = theme_registry.get_color("render", "bg")
-        self.font = pygame.font.SysFont("Arial", 16, bold=True)
+        self.font = pygame.font.SysFont("Arial", 22, bold=True)
+        self.font_title = pygame.font.SysFont("Arial", 26, bold=True)
         self.chunk_surfaces = {}
         self.direction_text = {'N': '↑', 'S': '↓', 'E': '→', 'W': '←'}
         self.scaled_cache = {}
         self.last_zoom = self.camera.zoom
+        self.machine_tools = [name for name, cls in src.entities.BLOCK_REGISTRY.items() if hasattr(cls, 'upgrade')]
 
     def _get_chunk_surface(self, cx, cy):
         if (cx, cy) in self.chunk_surfaces:
@@ -726,32 +729,78 @@ class UIRenderer:
             self.screen.blit(highlight, (pixel_x, pixel_y))
 
     def _draw_hud(self, fps=0):
-        """
-        Render the heads-up display (HUD) showing current tool, direction, and player money.
-        """
         hud_bg = theme_registry.get_color("render", "hud_bg")
         hud_border = theme_registry.get_color("render", "hud_border")
         hud_text_color = theme_registry.get_color("render", "hud_text")
+        screen_w, screen_h = self.screen.get_size()
 
-        tool = self.input_handler.selected_tool.upper()
-        direction = self.input_handler.current_direction
-        money = self.game_manager.economy.money if self.game_manager.economy else 0
+        # --- PANEL 1: SYSTEM INFO (TOP LEFT) ---
         mode = self.input_handler.interaction_mode
-
-        fps_text =f" FPS: {int(fps)}"
-        fps_text_surface = self.font.render(fps_text, True, hud_text_color)
-        self.screen.blit(fps_text_surface, (12, 10))
-
-        hud_text = f"MODE: {mode} (Q)   |   [1-{len(self.input_handler.tool_groups)}] TOOL: {tool}    |   CASH: ${money}"
-        text_surface = self.font.render(hud_text, True, hud_text_color)
+        sys_text = f"MODE: {mode.upper()}(Q)  |  FPS: {int(fps)}"
+        sys_surf = self.font.render(sys_text, True, hud_text_color)
+        sys_rect = pygame.Rect(15, 15, sys_surf.get_width() + 24, 36)
         
+        pygame.draw.rect(self.screen, hud_bg, sys_rect, border_radius=6)
+        pygame.draw.rect(self.screen, hud_border, sys_rect, 1, border_radius=6)
+        self.screen.blit(sys_surf, (sys_rect.x + 12, sys_rect.y + (sys_rect.height - sys_surf.get_height()) // 2))
+
+        # --- PANEL 2: ECONOMY (TOP RIGHT) ---
+        money = self.game_manager.economy.money if self.game_manager.economy else 0
+        from src.utils import format_number
+        cash_text = f"CASH: ${format_number(money)}"
+        
+        cash_color = theme_registry.get_color("render", "cash_color")
+        cash_surf = self.font_title.render(cash_text, True, cash_color)
+        
+        cash_rect = pygame.Rect(screen_w - cash_surf.get_width() - 35, 15, cash_surf.get_width() + 24, 36)
+        pygame.draw.rect(self.screen, hud_bg, cash_rect, border_radius=6)
+        pygame.draw.rect(self.screen, hud_border, cash_rect, 1, border_radius=6)
+        self.screen.blit(cash_surf, (cash_rect.x + 12, cash_rect.y + (cash_rect.height - cash_surf.get_height()) // 2))
+
+        # --- PANEL 3: TOOLBAR (BOTTOM CENTER) ---
+        tool = self.input_handler.selected_tool.lower()
+        direction = getattr(self.input_handler, 'current_direction', 'N')
+        total_groups = len(getattr(self.input_handler, 'tool_groups', []))
+        
+        slot_size = 72
         padding = 10
-        delta_y = 24
-        hud_rect = pygame.Rect(12, 12 + delta_y, text_surface.get_width() + padding*2, text_surface.get_height() + padding)
         
-        pygame.draw.rect(self.screen, hud_bg, hud_rect)
-        pygame.draw.rect(self.screen, hud_border, hud_rect, 1)
-        self.screen.blit(text_surface, (12 + padding, 12 + padding // 2 + delta_y))
+        tb_rect = pygame.Rect((screen_w - slot_size - padding * 2) // 2, 
+                              screen_h - slot_size - padding * 2 - 25, 
+                              slot_size + padding * 2, 
+                              slot_size + padding * 2)
+
+        pygame.draw.rect(self.screen, hud_bg, tb_rect, border_radius=8)
+        pygame.draw.rect(self.screen, theme_registry.get_color("windows", "button_active"), tb_rect, 2, border_radius=8)
+        
+        if tool and hasattr(self, 'asset_manager'):
+            try:
+                if tool in self.machine_tools:
+                    base_color = theme_registry.get_color("levels", "1")
+                    border_color = theme_registry.get_color("windows", "border")
+                    
+                    base_rect = pygame.Rect(tb_rect.x + padding, tb_rect.y + padding, slot_size, slot_size)
+                    pygame.draw.rect(self.screen, base_color, base_rect)
+                    pygame.draw.rect(self.screen, border_color, base_rect, 1)
+
+                filepath = f"assets/{tool}.png"
+                surf = self.asset_manager.get_asset(tool, filepath)
+                if surf.get_width() != slot_size:
+                    surf = pygame.transform.scale(surf, (slot_size, slot_size))
+                self.screen.blit(surf, (tb_rect.x + padding, tb_rect.y + padding))
+            except Exception:
+                txt_surf = self.font.render(tool[:4].upper(), True, hud_text_color)
+                self.screen.blit(txt_surf, (tb_rect.centerx - txt_surf.get_width() // 2, tb_rect.centery - txt_surf.get_height() // 2))
+
+        header_text = f"GROUP [1-{total_groups}]   |   {tool.upper()}"
+        header_surf = self.font.render(header_text, True, hud_text_color)
+        header_rect = pygame.Rect(tb_rect.centerx - header_surf.get_width() // 2 - 12, 
+                                  tb_rect.y - 38, 
+                                  header_surf.get_width() + 24, 
+                                  30)
+                                  
+        pygame.draw.rect(self.screen, hud_bg, header_rect, border_radius=4)
+        self.screen.blit(header_surf, (header_rect.x + 12, header_rect.y + (header_rect.height - header_surf.get_height()) // 2))
 
     def _draw_hover_info(self):
         """

@@ -215,6 +215,7 @@ class ItemRegistry:
                     "image": f"assets/{item_name}.png"
                 }
 
+
 class OreRegistry:
     def __init__(self):
         self.ore_data = {}
@@ -229,7 +230,8 @@ class OreRegistry:
     def get_color(self, ore_name: str):
         color_list = self.ore_data.get(ore_name, {}).get("color", [255, 0, 255])
         return tuple(color_list)
-    
+
+
 class ThemeRegistry:
     """
     Centralized registry managing all color themes and UI styling from a JSON file.
