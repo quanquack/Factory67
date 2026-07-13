@@ -200,10 +200,16 @@ class ItemRegistry:
         for ore_name, config in ore_configs.items():
             base_price = config.get("base_price", 1)
 
+            color = tuple(config.get("color", [255, 255, 255]))
+
             self.item_data[ore_name] = {
                 "display_name": f"{ore_name.capitalize()} Ore",
                 "price": base_price,
-                "image": f"assets/{ore_name}.png"
+                "image": f"assets/{ore_name}.png",
+                "metadata": {
+                    "color": color,
+                    "template": "ore"
+                }
             }
 
             for product in config.get("products", []):
@@ -212,7 +218,11 @@ class ItemRegistry:
                 self.item_data[item_name] = {
                     "display_name": f"{ore_name.capitalize()} {product.capitalize()}",
                     "price": base_price * multiplier,
-                    "image": f"assets/{item_name}.png"
+                    "image": f"assets/{item_name}.png",
+                    "metadata": {
+                        "color": color,
+                        "template": product
+                    }
                 }
 
 

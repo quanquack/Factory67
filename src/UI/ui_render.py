@@ -564,14 +564,15 @@ class UIRenderer:
         angle = 0
         class_name = type(entity).__name__
 
+        #Non-rotate blocks
         if class_name not in ('Conveyor', 'CentralStorage', 'Seller'):
             direction = getattr(entity, 'output_dir', OPPOSITE_DIRS[getattr(entity, 'input_dir', 'N')])
             
             dir_to_angle = {'S': 0, 'E': 90, 'N': 180, 'W': -90}
             angle = dir_to_angle.get(direction, 0)
 
-        filepath = f"assets/{machine_name}.png"
-        surface = self.asset_manager.get_asset(machine_name, filepath, angle)
+        # filepath = f"assets/{machine_name}.png"
+        surface = self.asset_manager.get_machine_asset(machine_name, angle)
 
         width_tiles = getattr(entity, 'width', 1)
         height_tiles = getattr(entity, 'height', 1)
@@ -591,17 +592,17 @@ class UIRenderer:
         # if hasattr(entity, 'level'):
         level = getattr(entity, 'level', 1)
 
-        bg_color = theme_registry.get_level_color(level)
-        machine_border = theme_registry.get_color("render", "machine_border")
-        
+
+        bg_surface = self.asset_manager.get_tier_background(level, target_w, target_h)
         bg_rect = pygame.Rect(pixel_x, pixel_y, target_w, target_h)
         
         if is_ghost:
-            s = pygame.Surface((target_w, target_h), pygame.SRCALPHA)
-            s.fill((*bg_color, 100))
-            self.screen.blit(s, (pixel_x, pixel_y))
+            ghost_bg = bg_surface.copy()
+            ghost_bg.set_alpha(100)
+            self.screen.blit(ghost_bg, (pixel_x, pixel_y))
         else:
-            pygame.draw.rect(self.screen, bg_color, bg_rect)
+            machine_border = theme_registry.get_color("render", "machine_border")
+            self.screen.blit(bg_surface, (pixel_x, pixel_y))
             pygame.draw.rect(self.screen, machine_border, bg_rect, 2)
 
         if is_ghost:
@@ -688,8 +689,8 @@ class UIRenderer:
                 item_x = center_x + (exit_x - center_x) * t
                 item_y = center_y + (exit_y - center_y) * t
 
-            filepath = f"assets/{item.item_name}.png"
-            item_surface = self.asset_manager.get_asset(item.item_name, filepath)
+            # filepath = f"assets/{item.item_name}.png"
+            item_surface = self.asset_manager.get_item_asset(item.item_name)
 
             if item_surface.get_width() != item_size:
                 cache_key = (f"item_{item.item_name}", item_size, item_size)
@@ -776,15 +777,14 @@ class UIRenderer:
         if tool and hasattr(self, 'asset_manager'):
             try:
                 if tool in self.machine_tools:
-                    base_color = theme_registry.get_color("levels", "1")
                     border_color = theme_registry.get_color("windows", "border")
-                    
+                    bg_surface = self.asset_manager.get_tier_background(1, slot_size, slot_size)
                     base_rect = pygame.Rect(tb_rect.x + padding, tb_rect.y + padding, slot_size, slot_size)
-                    pygame.draw.rect(self.screen, base_color, base_rect)
+                    self.screen.blit(bg_surface, (base_rect.x, base_rect.y))
                     pygame.draw.rect(self.screen, border_color, base_rect, 1)
 
-                filepath = f"assets/{tool}.png"
-                surf = self.asset_manager.get_asset(tool, filepath)
+                # filepath = f"assets/{tool}.png"
+                surf = self.asset_manager.get_machine_asset(tool)
                 if surf.get_width() != slot_size:
                     surf = pygame.transform.scale(surf, (slot_size, slot_size))
                 self.screen.blit(surf, (tb_rect.x + padding, tb_rect.y + padding))

@@ -27,7 +27,7 @@
         "scale": 0.03, 
         "threshold": 0.45, 
         "seed_offset": 3000,
-        "color": [210, 217, 224],
+        "color": [99, 157, 187],
         "products": ["plate", "wire", "liquid"],
         "base_price": 2
     }
