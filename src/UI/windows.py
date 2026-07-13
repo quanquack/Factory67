@@ -37,9 +37,9 @@ class ItemSlot:
         display_name = item_registry.get_display_name(self.item_name)
         
         if asset_manager:
-            filepath = f"assets/{self.item_name}.png"
+            # filepath = f"assets/{self.item_name}.png"
             try:
-                surf = asset_manager.get_asset(self.item_name, filepath)
+                surf = asset_manager.get_item_asset(self.item_name)
                 icon_size = self.rect.width - 16
                 if surf.get_width() != icon_size:
                     surf = pygame.transform.scale(surf, (icon_size, icon_size))
