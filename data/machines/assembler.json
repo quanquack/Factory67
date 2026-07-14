@@ -1,7 +1,9 @@
 {
     "metadata": {
+        "class_name": "Machine",
         "base_speed": 180,
         "require_selection": true,
+        "upgradeable": true,
         "upgrade_costs": [
             {"iron_plate": 5, "copper_wire": 5},
             {"iron_plate": 10, "circuit": 6, "gold_plate": 2},

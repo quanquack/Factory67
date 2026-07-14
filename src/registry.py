@@ -95,6 +95,16 @@ class MachineRegistry:
                         self.machine_data[machine].setdefault("recipes", {})
                         self.machine_data[machine]["recipes"][output_name] = ingredients
 
+    def resolve_class(self, block_classes):
+        class_map = {cls.__name__: cls for cls in block_classes}
+        for data in self.machine_data.values():
+            class_name = data["metadata"].get("class_name")
+            if class_name:
+                data["class"] = class_map[class_name]
+
+    def get_class(self, machine_type, default=None):
+        return self.machine_data.get(machine_type, {}).get("class", default)
+
 
 class ItemRegistry:
     """

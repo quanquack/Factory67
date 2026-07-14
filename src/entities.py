@@ -2,16 +2,8 @@ from collections import deque
 from abc import ABC, abstractmethod
 from src.registry import machine_registry, item_registry
 
-BLOCK_REGISTRY = {}
-
-def register_block(tool_name):
-    def wrapper(cls):
-        BLOCK_REGISTRY[tool_name] = cls
-        return cls
-    return wrapper
-
 def spawn_entity(tool, x, y, context):
-    block_class = BLOCK_REGISTRY.get(tool, Machine)
+    block_class = machine_registry.get_class(tool, default=Machine)
     
     if hasattr(block_class, 'build'):
         return block_class.build(x, y, context)
@@ -540,10 +532,6 @@ class BaseBlock(ABC):
     def get_asset_name(self) -> str: ...
 
 
-@register_block('smelter')
-@register_block('bender')
-@register_block('wiremill')
-@register_block('assembler')
 class Machine(BaseBlock):
     """
     Base class for functional machines capable of processing items.
@@ -742,7 +730,6 @@ class Machine(BaseBlock):
         return cls(x_pos=x, y_pos=y, output_dir=ctx['out_dir'], machine_type=ctx['tool'])
     
 
-@register_block('miner')
 class Miner(BaseBlock):
     """
     Extracts raw resources from the environment and outputs them continuously.
@@ -850,7 +837,6 @@ class Miner(BaseBlock):
         return cls(x_pos=x, y_pos=y, ore=ore, output_dir=ctx['out_dir'])
     
 
-@register_block('conveyor')
 class Conveyor(BaseBlock):
     """
     Transports items between different blocks on the map.
@@ -1007,7 +993,6 @@ class Conveyor(BaseBlock):
         return cls(x_pos=x, y_pos=y, input_dir=ctx['in_dir'], output_dir=ctx['out_dir'])
         
 
-@register_block('merger')
 class Merger(BaseBlock):
     """
     Merges items from multiple input sources into a single output stream.
@@ -1115,8 +1100,6 @@ class Merger(BaseBlock):
         return cls(x_pos=x, y_pos=y, output_dir=ctx['out_dir'])
 
 
-@register_block('splitter')
-@register_block('filter')
 class Router(BaseBlock):
     """
     Distributes an incoming stream of items across multiple outputs based on weights.
@@ -1336,7 +1319,6 @@ class Router(BaseBlock):
         return cls(x_pos=x, y_pos=y, input_dir=ctx['in_dir'], mode=target_mode)
 
 
-@register_block('seller')
 class Seller(BaseBlock):
     """
     Consumes items and adds corresponding funds to the player economy.
@@ -1439,7 +1421,6 @@ class Seller(BaseBlock):
         return cls(x_pos=x, y_pos=y, economy_manager=ctx.get('economy'))
 
 
-@register_block('storage')
 class CentralStorage(BaseBlock):
     """
     Accepts items and places them directly into the player's main inventory.

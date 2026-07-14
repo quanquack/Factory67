@@ -104,7 +104,7 @@ class InputHandler:
         self.game_manager = game_manager
         self.camera = camera
         self.tile_size = tile_size
-        machine_tools = [name for name, cls in src.entities.BLOCK_REGISTRY.items() if cls is src.entities.Machine]
+        machine_tools = [name for name, data in machine_registry.machine_data.items() if data["metadata"].get("class_name") == "Machine"]
 
         self.tool_groups = [
             ['miner'],
@@ -456,7 +456,7 @@ class UIRenderer:
         self.direction_text = {'N': '↑', 'S': '↓', 'E': '→', 'W': '←'}
         self.scaled_cache = {}
         self.last_zoom = self.camera.zoom
-        self.machine_tools = [name for name, cls in src.entities.BLOCK_REGISTRY.items() if hasattr(cls, 'upgrade')]
+        self.upgradeable_tools = [name for name, data in machine_registry.machine_data.items() if data["metadata"].get("upgradable")]
 
     def _get_chunk_surface(self, cx, cy):
         if (cx, cy) in self.chunk_surfaces:
@@ -776,7 +776,7 @@ class UIRenderer:
         
         if tool and hasattr(self, 'asset_manager'):
             try:
-                if tool in self.machine_tools:
+                if tool in self.upgradeable_tools:
                     border_color = theme_registry.get_color("windows", "border")
                     bg_surface = self.asset_manager.get_tier_background(1, slot_size, slot_size)
                     base_rect = pygame.Rect(tb_rect.x + padding, tb_rect.y + padding, slot_size, slot_size)

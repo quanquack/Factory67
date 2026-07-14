@@ -1,6 +1,7 @@
 import pygame
 import sys
 import os
+from src.entities import BaseBlock
 from src.engine import GameMap, GameManager, SaveLoadManager
 from src.asset_manager import AssetManager
 from src.player import Economy, Inventory
@@ -61,6 +62,7 @@ def main():
     ore_registry.load_from_file("data/ores.json")
     theme_registry.load_from_file("data/theme.json")
     machine_registry.generate_ore_recipes(ore_registry.get_all_ores())
+    machine_registry.resolve_class(BaseBlock.__subclasses__())
     item_registry.generate_ore_items(ore_registry.get_all_ores())
 
     game_map = GameMap()
