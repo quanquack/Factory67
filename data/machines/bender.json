@@ -3,7 +3,8 @@
         "class_name": "Machine",
         "base_speed": 120,
         "require_selection": false,
-        "upgradeable": true,
+        "upgradable": true,
+        "removable": true,
         "recipe_templates": {
             "plate": {
                 "output": "{ore}_plate",
