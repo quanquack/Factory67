@@ -1,5 +1,7 @@
 {
     "metadata": {
-        "class_name": "Seller"
+        "class_name": "Seller",
+        "upgradable": false,
+        "removable": false
     }
 }

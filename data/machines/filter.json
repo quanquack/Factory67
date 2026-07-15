@@ -1,5 +1,7 @@
 {
     "metadata": {
-        "class_name": "Router"
+        "class_name": "Router",
+        "upgradable": false,
+        "removable": true
     }
 }

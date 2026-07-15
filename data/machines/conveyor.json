@@ -1,5 +1,7 @@
 {
     "metadata": {
-        "class_name": "Conveyor"
+        "class_name": "Conveyor",
+        "upgradable": false,
+        "removable": true
     }
 }

@@ -747,7 +747,6 @@ class UIRenderer:
 
         # --- PANEL 2: ECONOMY (TOP RIGHT) ---
         money = self.game_manager.economy.money if self.game_manager.economy else 0
-        from src.utils import format_number
         cash_text = f"CASH: ${format_number(money)}"
         
         cash_color = theme_registry.get_color("render", "cash_color")

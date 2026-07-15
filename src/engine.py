@@ -25,8 +25,9 @@ class MapGenerator:
             ore_seed = self.seed + config.get("seed_offset", 0)
             self.noise_layers[ore_name] = PerlinNoise(octaves=3, seed=ore_seed)
 
-    @lru_cache(maxsize=16384)
-    def get_ore_at(self, x, y):
+        self.get_ore_at = lru_cache(maxsize=16384)(self._get_ore_at)
+
+    def _get_ore_at(self, x, y):
         for ore_name, config in self.ore_configs.items():
             noise_val = self.noise_layers[ore_name]([x * config["scale"], y * config["scale"]])
             if noise_val > config["threshold"]:
@@ -115,7 +116,7 @@ class GameMap:
         if not block_object:
             return False
         
-        if isinstance(block_object, (entities.CentralStorage, entities.Seller)):
+        if not block_object.removable:
             return False
             
         if hasattr(block_object, 'connection'):

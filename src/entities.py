@@ -468,8 +468,6 @@ class UpgradeComponent:
         self.registry_key = registry_key
 
     def process_upgrade(self, player_inventory) -> bool:
-        from src.registry import machine_registry
-        
         metadata = machine_registry.get_metadata(self.registry_key)
         costs = metadata.get("upgrade_costs", [])
         max_level = len(costs) + 1
@@ -512,6 +510,11 @@ class TransportedItem:
 
 
 class BaseBlock(ABC):
+    @property
+    def removable(self):
+        metadata = machine_registry.get_metadata(self.get_asset_name())
+        return metadata.get("removable", True)
+
     @abstractmethod
     def process_tick(self): ...
 

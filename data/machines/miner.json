@@ -2,7 +2,8 @@
     "metadata": {
         "class_name": "Miner",
         "base_speed": 120,
-        "upgradeable": true,
+        "upgradable": true,
+        "removable": true,
         "upgrade_costs": [
             {"gold_plate": 5, "copper_wire": 5},
             {"gold_plate": 10, "iron_plate": 2, "circuit": 6},

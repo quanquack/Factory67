@@ -831,7 +831,6 @@ class RecipeUnlockWindow:
 
     def _collect_recipes(self):
         self.recipes = []
-        from src.registry import machine_registry
         for machine_type, data in machine_registry.machine_data.items():
             unlock_costs = data.get("metadata", {}).get("recipe_unlock_costs", {})
             for recipe_name, ingredients in data.get("recipes", {}).items():
@@ -932,11 +931,9 @@ class RecipeUnlockWindow:
 
         unlocked_count = sum(1 for _, r, _, _ in self.recipes if r in self.inventory.unlocked_recipes)
         
-        from src.utils import format_number
         self.frame.draw_label(screen, f"Unlocked: {unlocked_count} / {len(self.recipes)}   |   Balance: ${format_number(self.economy.money)}", x, y, dim=True)
 
         hovered_name_for_tooltip = None
-        from src.registry import theme_registry
 
         for row in self.recipe_rows:
             machine_type, recipe_name, ingredients, cost = row['entry']
@@ -1110,7 +1107,6 @@ class StatisticsWindow:
         self.frame.draw_label(screen, f"Income Rate: ${money_rate:.1f} / sec", x_start, y_start)
         y_start += 30
         
-        from src.registry import theme_registry
         pygame.draw.line(screen, theme_registry.get_color("windows", "border"), (x_start, y_start), (self.frame.x + self.frame.width - self.frame.PADDING, y_start))
         y_start += 15
         

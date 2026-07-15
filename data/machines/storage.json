@@ -1,5 +1,7 @@
 {
     "metadata": {
-        "class_name": "CentralStorage"
+        "class_name": "CentralStorage",
+        "upgradable": false,
+        "removable": false
     }
 }

@@ -93,7 +93,8 @@ class MachineRegistry:
                         }
 
                         self.machine_data[machine].setdefault("recipes", {})
-                        self.machine_data[machine]["recipes"][output_name] = ingredients
+                        if output_name not in self.machine_data[machine]["recipes"]:
+                            self.machine_data[machine]["recipes"][output_name] = ingredients
 
     def resolve_class(self, block_classes):
         class_map = {cls.__name__: cls for cls in block_classes}
