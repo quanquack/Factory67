@@ -386,14 +386,15 @@ class InputHandler:
         if final_in_dir == out_dir:
             final_in_dir = OPPOSITE_DIRS[out_dir]
 
-        context = {
-            'game_map': self.game_manager.game_map,
-            'economy': self.game_manager.economy,
-            'inventory': self.game_manager.inventory,
-            'in_dir': final_in_dir,
-            'out_dir': out_dir,
-            'tool': self.selected_tool
-        }
+        context = src.entities.BuildContext(
+            tool=self.selected_tool,
+            out_dir=out_dir,
+            in_dir=final_in_dir,
+            game_map=self.game_manager.game_map,
+            economy=self.game_manager.economy,
+            inventory=self.game_manager.inventory,
+            game_manager=self.game_manager
+        )
         
         return src.entities.spawn_entity(self.selected_tool, x, y, context)
 
