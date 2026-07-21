@@ -1,0 +1,24 @@
+{
+    "scenario_name": "Standard Start",
+    "description": "Standard Map with Storage and Seller.",
+    "starting_hubs": [
+        {
+            "tool_id": "storage",
+            "x": -8,
+            "y": -2,
+            "width": 4,
+            "height": 4,
+            "out_dir": "E",
+            "in_dir": "W"
+        },
+        {
+            "tool_id": "seller",
+            "x": 4,
+            "y": -2,
+            "width": 4,
+            "height": 4,
+            "out_dir": "E",
+            "in_dir": "W"
+        }
+    ]
+}

@@ -122,10 +122,8 @@ def main():
                         game_manager.inventory.inventory.clear() 
                         game_manager.inventory.unlocked_recipes.clear()
 
-                        game_manager.game_map.spawn_fixed_hubs(
-                            game_manager.inventory, 
-                            game_manager.economy
-                        )
+                        game_manager.load_scenario("data/scenarios/default_start.json")
+
                         current_state = "PLAYING"
                         print("[System] New game start!")
                         

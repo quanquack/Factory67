@@ -3,8 +3,8 @@ import json
 import os
 from perlin_noise import PerlinNoise
 from functools import lru_cache
-import src.entities as entities
 from src.registry import machine_registry, item_registry, ore_registry
+from src.components import BuildContext
 
 class Chunk:
     def __init__(self, cx, cy):
@@ -57,37 +57,6 @@ class GameMap:
             return chunk.grid.get((x_pos, y_pos))
         return None
     
-    def spawn_fixed_hubs(self, player_inventory, economy_manager):
-        storage_hub = entities.CentralStorage(-8, -2, player_inventory)
-        storage_hub.width = 4
-        storage_hub.height = 4
-        
-        for dx in range(4):
-            for dy in range(4):
-                grid_x = -8 + dx
-                grid_y = -2 + dy
-                cx, cy = self._get_chunk(grid_x, grid_y)
-                chunk = self.get_chunk(cx, cy, create_new=True)
-                chunk.grid[(grid_x, grid_y)] = storage_hub
-                chunk.is_modified = True
-                
-        storage_hub.connection.on_place(self)
-
-        seller_hub = entities.Seller(4, -2, economy_manager)
-        seller_hub.width = 4
-        seller_hub.height = 4
-        
-        for dx in range(4):
-            for dy in range(4):
-                grid_x = 4 + dx
-                grid_y = -2 + dy
-                cx, cy = self._get_chunk(grid_x, grid_y)
-                chunk = self.get_chunk(cx, cy, create_new=True)
-                chunk.grid[(grid_x, grid_y)] = seller_hub
-                chunk.is_modified = True
-                
-        seller_hub.connection.on_place(self)
-    
     def place_block(self, block_object):
         x, y = block_object.position.get_coord()
         cx, cy = self._get_chunk(x, y)
@@ -132,6 +101,26 @@ class GameMap:
     def get_ore_at(self, x_pos, y_pos):
         return self.generator.get_ore_at(x_pos, y_pos)
 
+class StatisticManager:
+    def __init__(self):
+        self.tick_counter = 0
+        self.UPDATE_INTERVAL = 60
+    def process_metrics(self, economy, inventory):
+        self.tick_counter += 1
+        
+        if self.tick_counter >= self.UPDATE_INTERVAL:
+            current_money_rate = economy.total_earned - economy.last_total_earned
+            economy.money_rate = getattr(economy, 'money_rate', 0.0) * 0.8 + current_money_rate * 0.2
+            economy.last_total_earned = economy.total_earned
+            
+            for item, count in inventory.total_stored.items():
+                current_item_rate = count - inventory.last_total_stored.get(item, 0)
+                old_rate = inventory.item_rates.get(item, 0.0)
+
+                inventory.item_rates[item] = old_rate * 0.8 + current_item_rate * 0.2
+                inventory.last_total_stored[item] = count
+                
+            self.tick_counter = 0
 
 class GameManager:
     def __init__(self, game_map, economy_manager, player_inventory):
@@ -140,31 +129,70 @@ class GameManager:
         self.inventory = player_inventory
         self.victory_achieved = False
 
-        self.tick_counter = 0
+        self.stats_manager = StatisticManager()
 
-    def update(self):
+    def load_scenario(self, filepath: str):
+        """Đọc scenario khởi tạo từ file JSON và spawn các công trình mặc định"""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                scenario_data = json.load(f)
+        except FileNotFoundError:
+            print(f"[Engine] NO Scenarios named {filepath} was found.")
+            return
+
+        for hub in scenario_data.get("starting_hubs", []):
+            ctx = BuildContext(
+                tool=hub["tool_id"],
+                out_dir=hub.get("out_dir", "S"),
+                in_dir=hub.get("in_dir", "N"),
+                game_map=self.game_map,
+                economy=self.economy,
+                inventory=self.inventory,
+                game_manager=self
+            )
+            
+            block_class = machine_registry.get_class(hub["tool_id"])
+            if not block_class:
+                continue
+                
+            block = block_class.build(hub["x"], hub["y"], ctx)
+            if block:
+                block.width = hub.get("width", 1)
+                block.height = hub.get("height", 1)
+                
+                for dx in range(block.width):
+                    for dy in range(block.height):
+                        grid_x = hub["x"] + dx
+                        grid_y = hub["y"] + dy
+                        cx, cy = self.game_map._get_chunk(grid_x, grid_y)
+                        chunk = self.game_map.get_chunk(cx, cy, create_new=True)
+                        
+                        chunk.grid[(grid_x, grid_y)] = block
+                        chunk.is_modified = True
+                        
+                if hasattr(block, 'connection'):
+                    block.connection.on_place(self.game_map)
+
+    def update(self):    
+        for chunk in self.game_map.chunks.values():
+            if not chunk.is_modified:
+                continue
+            for entity in chunk.grid.values():
+                if hasattr(entity, 'buffer_comp'):
+                    entity.buffer_comp.flush_pending()
+                elif hasattr(entity, 'pending_items'):
+                    if entity.pending_items:
+                        entity.items.extend(entity.pending_items)
+                        entity.pending_items.clear()
+
         for chunk in self.game_map.chunks.values():
             if not chunk.is_modified:
                 continue
             for entity in chunk.grid.values():
                 if hasattr(entity, 'process_tick'):
                     entity.process_tick()
-
-        self.tick_counter += 1
-        if self.tick_counter >= 60:
-            current_money_rate = self.economy.total_earned - self.economy.last_total_earned
-            self.economy.money_rate = getattr(self.economy, 'money_rate', 0.0) * 0.8 + current_money_rate * 0.2
-            self.economy.last_total_earned = self.economy.total_earned
-
-            for item, count in self.inventory.total_stored.items():
-                current_item_rate = count - self.inventory.last_total_stored.get(item, 0)
-                old_rate = self.inventory.item_rates.get(item, 0.0)
-                
-                self.inventory.item_rates[item] = old_rate * 0.8 + current_item_rate * 0.2
-                self.inventory.last_total_stored[item] = count
-
-            self.tick_counter = 0
-
+      
+        self.stats_manager.process_metrics(self.economy, self.inventory)
 
 class SaveLoadManager:
     """ 
@@ -221,20 +249,25 @@ class SaveLoadManager:
 
         self.economy.money = save_data.get("money", 0)
         self.game_manager.victory_achieved = save_data.get("victory_achieved", False)
-
+        
         if "inventory" in save_data:
             self.inventory.from_dict(save_data["inventory"])
-        
+            
         saved_seed = save_data.get("seed")
         if saved_seed is not None:
             self.game_map.generator = MapGenerator(seed=saved_seed)
 
-        self.game_map.spawn_fixed_hubs(self.inventory, self.economy)
+        self.game_manager.load_scenario("data/scenarios/default_start.json")
 
         for chunk_data in save_data.get("chunks", []):
             for entity_data in chunk_data.get("entities", []):
                 class_name = entity_data.get("class_name")
-                block_class = getattr(entities, class_name, None)
+                
+                block_class = None
+                for data in machine_registry.machine_data.values():
+                    if data.get("metadata", {}).get("class_name") == class_name:
+                        block_class = data.get("class")
+                        break
                 
                 if block_class and hasattr(block_class, 'from_dict'):
                     new_block = block_class.from_dict(
@@ -245,5 +278,5 @@ class SaveLoadManager:
                     )
                     if new_block:
                         self.game_map.place_block(new_block)
-
+                        
         return True
