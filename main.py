@@ -5,7 +5,9 @@ from src.entities import BaseBlock
 from src.engine import GameMap, GameManager, SaveLoadManager
 from src.asset_manager import AssetManager
 from src.player import Economy, Inventory
-from src.UI.ui_render import UIRenderer, InputHandler, Camera 
+from src.UI.ui_render import UIRenderer
+from src.UI.camera import Camera
+from src.UI.input_handler import InputHandler
 from src.UI.menu import MainMenu
 from src.registry import machine_registry, item_registry, ore_registry, theme_registry
 
@@ -50,7 +52,7 @@ def main():
     if info.current_h <= 1080:
         flags |= pygame.FULLSCREEN
 
-    screen_width, screen_height = 1920, 1080
+    screen_width, screen_height = 1280, 720
     screen = pygame.display.set_mode((screen_width, screen_height), flags)
     is_fullscreen = False
     pygame.display.set_caption("Factory67")
