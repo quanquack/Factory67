@@ -23,9 +23,9 @@ class MapGenerator:
         self.noise_layers = {}
         for ore_name, config in self.ore_configs.items():
             ore_seed = self.seed + config.get("seed_offset", 0)
-            self.noise_layers[ore_name] = PerlinNoise(octaves=3, seed=ore_seed)
+            self.noise_layers[ore_name] = PerlinNoise(octaves=2.1, seed=ore_seed)
 
-        self.get_ore_at = lru_cache(maxsize=16384)(self._get_ore_at)
+        self.get_ore_at = lru_cache(maxsize=65536)(self._get_ore_at)
 
     def _get_ore_at(self, x, y):
         for ore_name, config in self.ore_configs.items():
